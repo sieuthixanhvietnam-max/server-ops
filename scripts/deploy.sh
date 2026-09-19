@@ -69,7 +69,13 @@ fi
 echo "    OK - no in-flight jobs."
 
 echo "==> Checking production git working tree is clean..."
-DIRTY="$(ssh_do "cd $VPS_APP_DIR && git status --porcelain")"
+# --untracked-files=no: this deploy script itself leaves DEPLOYED_SHA behind
+# on the VPS (untracked, by design - not something to gitignore into the repo
+# either, it is a marker for humans reading the VPS filesystem, not a repo
+# artifact). Only tracked-file modifications indicate someone edited code
+# directly on the VPS outside of a deploy, which is the actual thing worth
+# stopping for.
+DIRTY="$(ssh_do "cd $VPS_APP_DIR && git status --porcelain --untracked-files=no")"
 if [ -n "$DIRTY" ]; then
   echo "!! ABORT: production working tree has uncommitted changes - investigate before deploying:"
   echo "$DIRTY"
