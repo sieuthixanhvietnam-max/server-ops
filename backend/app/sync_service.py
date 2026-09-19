@@ -40,11 +40,28 @@ async def fetch_sync_payload() -> dict:
 
 
 def _diff_and_log_domains(
-    db: Session, deduped: dict[tuple[str, str], dict], detected_at: datetime
+    db: Session,
+    deduped: dict[tuple[str, str], dict],
+    detected_at: datetime,
+    server_names_in_payload: set[str],
 ) -> set[str]:
     """Returns the set of server_names whose domains were skipped this cycle
     (kept untouched, not diffed) because the payload reported 0 domains for
-    a server that had some last sync."""
+    a server that had some last sync AND that server is still listed in the
+    servers payload (still alive, just a scan gap this cycle).
+
+    A server that also disappeared from the servers payload - not just its
+    domain count - is a confirmed decommission, not a scan gap: a server
+    that's merely unreachable for the domain scan still normally stays
+    listed as a known server in inventory. That case is deliberately NOT
+    added to the returned set, so its stale domains fall through to the
+    normal diff below and get purged + logged like any other real removal
+    (this is the follow-through for the "let the next one confirm" comment
+    below - confirmed via a live check on production 2026-09-19: source
+    servers gcp-bearvinarm-dts-01/gcp-sop-dts-01 were deleted on GCP after
+    a migrate job, dropped out of the servers payload immediately, but
+    their 59+28 old domain rows were still sitting in the domains table
+    with no purge path at all before this fix)."""
     existing = db.query(
         Domain.domain, Domain.server_name, Domain.provider, Domain.profile
     ).all()
@@ -64,21 +81,29 @@ def _diff_and_log_domains(
     # domains to 0 in one cycle (08:37) while it was unreachable over SSH,
     # then came back with the exact same 42 domains re-added at 10:07 -
     # pure flapping, logged as a false removed+added pair for every domain.
-    # A real full wipe (server decommissioned) is rare and, in practice,
-    # also drops out of the servers payload soon after - safe to just skip
-    # this cycle and let the next one confirm instead of trusting a single 0.
     old_server_names = {server_name for _, server_name in existing_keys}
     new_domain_counts = defaultdict(int)
     for _, server_name in deduped:
         new_domain_counts[server_name] += 1
-    stale_server_names = {s for s in old_server_names if new_domain_counts.get(s, 0) == 0}
+    zero_report_server_names = {s for s in old_server_names if new_domain_counts.get(s, 0) == 0}
+    decommissioned_server_names = {
+        s for s in zero_report_server_names if s not in server_names_in_payload
+    }
+    stale_server_names = zero_report_server_names - decommissioned_server_names
 
     if stale_server_names:
         logger.warning(
             "Sync payload: server(s) %s reported 0 domains this cycle (had domains "
-            "before) - treating as a scan gap, not a real deletion; keeping their "
-            "existing domain rows untouched",
+            "before) but are still listed as known servers - treating as a scan gap, "
+            "not a real deletion; keeping their existing domain rows untouched",
             sorted(stale_server_names),
+        )
+    if decommissioned_server_names:
+        logger.warning(
+            "Sync payload: server(s) %s reported 0 domains AND dropped out of the "
+            "servers payload entirely - treating as a confirmed decommission; purging "
+            "their existing domain rows",
+            sorted(decommissioned_server_names),
         )
 
     existing_keys_for_diff = {(d, s) for d, s in existing_keys if s not in stale_server_names}
@@ -159,7 +184,12 @@ def _diff_and_log_domains(
 _DOMAIN_CONFLICT_FIELDS = ("profile", "provider", "server_ip", "updated")
 
 
-def _replace_domains(db: Session, domains: list[dict], detected_at: datetime) -> int:
+def _replace_domains(
+    db: Session,
+    domains: list[dict],
+    detected_at: datetime,
+    server_names_in_payload: set[str],
+) -> int:
     # Source data can list the same domain multiple times (e.g. shared across
     # servers, or exact duplicate rows) - dedupe on (domain, server_name),
     # last one wins. If the discarded copy actually disagrees on profile/
@@ -180,7 +210,7 @@ def _replace_domains(db: Session, domains: list[dict], detected_at: datetime) ->
             )
         deduped[key] = item
 
-    stale_server_names = _diff_and_log_domains(db, deduped, detected_at)
+    stale_server_names = _diff_and_log_domains(db, deduped, detected_at, server_names_in_payload)
 
     # Domains belonging to a server flagged as "didn't report this cycle"
     # (see _diff_and_log_domains) are excluded from the usual full
@@ -232,7 +262,10 @@ async def run_sync(db: Session) -> SyncLog:
     try:
         payload = await fetch_sync_payload()
         synced_at = datetime.now(timezone.utc)
-        domains_count = _replace_domains(db, payload.get("domains", []), synced_at)
+        server_names_in_payload = {s["server_name"] for s in payload.get("servers", [])}
+        domains_count = _replace_domains(
+            db, payload.get("domains", []), synced_at, server_names_in_payload
+        )
         servers_count = _replace_servers(db, payload.get("servers", []))
         log = SyncLog(
             synced_at=synced_at,
