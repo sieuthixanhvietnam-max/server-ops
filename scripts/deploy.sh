@@ -76,16 +76,23 @@ if [ -n "$DIRTY" ]; then
   exit 1
 fi
 
+echo "==> Fetching + checking out $TARGET_SHA on VPS..."
+# Checkout BEFORE shipping the frontend build, not after: frontend/dist is
+# a gitignored build artifact, never tracked by any commit we'd deploy, but
+# an old enough production checkout can still have it tracked from before
+# that convention existed. Checking out first - while dist/ still matches
+# whatever HEAD already has on disk - avoids git ever seeing our freshly
+# rsynced files as "local changes in the way" of the checkout.
+ssh_do "cd $VPS_APP_DIR && git fetch origin --quiet && git checkout --quiet --force $TARGET_SHA"
+
 echo "==> Building frontend (production build)..."
 cd "$REPO_ROOT/frontend"
+rm -rf dist
 npm run build
 
 echo "==> Syncing frontend/dist to VPS..."
 rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
   "$REPO_ROOT/frontend/dist/" "$VPS_HOST:$VPS_APP_DIR/frontend/dist/"
-
-echo "==> Fetching + checking out $TARGET_SHA on VPS..."
-ssh_do "cd $VPS_APP_DIR && git fetch origin --quiet && git checkout --quiet $TARGET_SHA"
 
 echo "==> Installing backend dependencies (in case requirements.txt changed)..."
 ssh_do "$VPS_APP_DIR/backend/venv/bin/pip install -q -r $VPS_APP_DIR/backend/requirements.txt"

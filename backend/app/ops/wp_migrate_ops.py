@@ -193,6 +193,20 @@ if [[ -z "${database_admin_username:-}" || -z "${database_admin_password:-}" ]];
 fi
 echo "  DB_Name=${DB_Name_web}"
 
+# DB_Password_web can be AES-encrypted (wptt-themwebsite encrypts it before
+# writing to the vhost conf; wptt-ket-noi decrypts it via wptt_giai_ma before
+# writing wp-config.php). CREATE USER below needs the same decrypted plaintext
+# - using the raw value literally sets the MySQL password to the ciphertext
+# string itself, which then never matches what wp-config.php actually has,
+# breaking every fresh migrate with "Error establishing a database connection"
+# (site-trang.com only worked by coincidence - its old, pre-encryption conf
+# stores a plain password, so there was nothing to decrypt).
+. /etc/wptt/core-functions 2>/dev/null
+if declare -F wptt_giai_ma >/dev/null 2>&1; then
+    DB_Password_plain=$(wptt_giai_ma "$DB_Password_web" 2>/dev/null)
+fi
+[[ -z "${DB_Password_plain:-}" ]] && DB_Password_plain="$DB_Password_web"
+
 TEMP_CNF=$(mktemp)
 chmod 600 "$TEMP_CNF"
 cat >"$TEMP_CNF" <<MARIADB_EOF
@@ -217,7 +231,7 @@ mariadb --defaults-extra-file="$TEMP_CNF" --ssl-verify-server-cert=false \\
 
 mariadb --defaults-extra-file="$TEMP_CNF" --ssl-verify-server-cert=false \\
     -e "DROP USER IF EXISTS '${DB_User_web}'@'localhost'; \\
-        CREATE USER '${DB_User_web}'@'localhost' IDENTIFIED BY '${DB_Password_web}'; \\
+        CREATE USER '${DB_User_web}'@'localhost' IDENTIFIED BY '${DB_Password_plain}'; \\
         GRANT ALL PRIVILEGES ON \\`${DB_Name_web}\\`.* TO '${DB_User_web}'@'localhost'; \\
         FLUSH PRIVILEGES;" 2>/dev/null
 

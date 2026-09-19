@@ -123,6 +123,18 @@ if [[ -z "${DB_Name_web:-}" ]]; then
 fi
 echo "[ ok ] DB credentials loaded: $DB_Name_web"
 
+# DB_Password_web can be AES-encrypted (wptt-themwebsite encrypts it before
+# writing the vhost conf; wptt-ket-noi below decrypts it via wptt_giai_ma
+# before writing wp-config.php). CREATE USER must use that same decrypted
+# plaintext, not the raw value, or the MySQL password ends up set to the
+# ciphertext string itself - never matching what wp-config.php actually has,
+# breaking the restored site with "Error establishing a database connection".
+source /etc/wptt/core-functions 2>/dev/null
+if declare -F wptt_giai_ma >/dev/null 2>&1; then
+    DB_Password_plain=$(wptt_giai_ma "$DB_Password_web" 2>/dev/null)
+fi
+[[ -z "${DB_Password_plain:-}" ]] && DB_Password_plain="$DB_Password_web"
+
 echo "[step] Extracting files..."
 tar -xzf "$TMP_BASE/$DOMAIN/files.tar.gz" -C / --overwrite 2>&1 | tail -5
 if [[ ! -f "$WP_PATH/wp-config.php" ]]; then
@@ -146,7 +158,7 @@ mariadb --defaults-extra-file="$TEMP_CNF" --ssl-verify-server-cert=false \
     -e "DROP DATABASE IF EXISTS \\`$DB_Name_web\\`;
         CREATE DATABASE \\`$DB_Name_web\\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
         DROP USER IF EXISTS '$DB_User_web'@'localhost';
-        CREATE USER '$DB_User_web'@'localhost' IDENTIFIED BY '$DB_Password_web';
+        CREATE USER '$DB_User_web'@'localhost' IDENTIFIED BY '$DB_Password_plain';
         GRANT ALL PRIVILEGES ON \\`$DB_Name_web\\`.* TO '$DB_User_web'@'localhost';
         FLUSH PRIVILEGES;" 2>&1
 
@@ -175,8 +187,8 @@ echo "[ ok ] Done"
 TABLE_PREFIX=$(grep -E '^\\$table_prefix\\s*=' "$WP_PATH/wp-config.php" 2>/dev/null \
     | sed "s/.*'\\([^']*\\)'.*/\\1/" | head -1 || true)
 [[ -z "${TABLE_PREFIX:-}" ]] && TABLE_PREFIX="wp_"
-TABLE_COUNT=$(mariadb -u "$DB_User_web" -p"$DB_Password_web" "$DB_Name_web" -e "SHOW TABLES;" 2>/dev/null | wc -l)
-SITEURL=$(mariadb -u "$DB_User_web" -p"$DB_Password_web" "$DB_Name_web" \
+TABLE_COUNT=$(mariadb -u "$DB_User_web" -p"$DB_Password_plain" "$DB_Name_web" -e "SHOW TABLES;" 2>/dev/null | wc -l)
+SITEURL=$(mariadb -u "$DB_User_web" -p"$DB_Password_plain" "$DB_Name_web" \
     -e "SELECT option_value FROM \\`${TABLE_PREFIX}options\\` WHERE option_name='siteurl';" 2>/dev/null | tail -1 || echo "unknown")
 
 echo "RESULT|OK|$DOMAIN|$DATE|$DB_Name_web|$TABLE_COUNT|$SITEURL"
