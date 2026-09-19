@@ -9,6 +9,7 @@ import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedStat
 import {
   listDomains,
   listServers,
+  triggerMaintenanceCleanJunk,
   triggerMaintenanceClearCache,
   triggerMaintenanceClearComments,
   triggerMaintenanceFixPermissions,
@@ -25,6 +26,8 @@ const STATUS_LABELS: Record<string, string> = {
   DRYRUN: 'Dry-run',
   FAIL: 'Thất bại',
 };
+
+const formatKb = (kb: number) => (kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
 
 const WpMaintenance: React.FC = () => {
   const { message } = App.useApp();
@@ -105,6 +108,17 @@ const WpMaintenance: React.FC = () => {
     }
   };
 
+  const runCleanJunk = async (dryRun: boolean) => {
+    if (!requireDomains()) return;
+    setRunning(true);
+    try {
+      const res = await triggerMaintenanceCleanJunk(selectedDomains, dryRun);
+      setJobId(res.job_id);
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const targetPicker = (
     <Card size="small" title={`Chọn domain đích (${selectedDomains.length} đã chọn)`} style={{ marginBottom: 16 }}>
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
@@ -172,6 +186,10 @@ const WpMaintenance: React.FC = () => {
   const permissionResults =
     job?.job_type === 'maintenance_fix_permissions' && (job.status === 'success' || job.status === 'failed')
       ? (job.result as API.MaintenanceFixPermissionsResult[])
+      : undefined;
+  const junkResults =
+    job?.job_type === 'maintenance_clean_junk' && (job.status === 'success' || job.status === 'failed')
+      ? (job.result as API.MaintenanceCleanJunkResult[])
       : undefined;
 
   return (
@@ -275,6 +293,35 @@ const WpMaintenance: React.FC = () => {
                 </div>
               ),
             },
+            {
+              key: 'junk',
+              label: 'Dọn rác',
+              children: (
+                <div>
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="Xoá rác tích luỹ từ clone site hàng loạt: wp-content/plugins-old, wp-content/ai1wm-backups (backup của plugin All-in-One WP Migration), và luucache. Mỗi lần clone site lại sinh ra rác này - nên chạy định kỳ (khuyến nghị hàng tháng) thay vì để tích luỹ đến khi ổ đĩa báo động. Không đụng vào WordPress đang chạy, không cần xác minh site sau khi chạy."
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button loading={isBusy} onClick={() => runCleanJunk(true)}>
+                      Kiểm tra (tính dung lượng rác)
+                    </Button>
+                    <DangerPopconfirm
+                      title="Xác nhận Dọn rác"
+                      targets={selectedDomains}
+                      onConfirm={() => runCleanJunk(false)}
+                      loading={running}
+                    >
+                      <Button danger type="primary" loading={isBusy}>
+                        Xoá thật
+                      </Button>
+                    </DangerPopconfirm>
+                  </div>
+                </div>
+              ),
+            },
           ]}
         />
 
@@ -335,6 +382,27 @@ const WpMaintenance: React.FC = () => {
                 title: 'Xác minh',
                 dataIndex: 'verify',
                 render: (v: API.VerifyInfo | undefined) => <VerifyBadge verify={v} />,
+              },
+              { title: 'Ghi chú', dataIndex: 'note' },
+            ]}
+          />
+        )}
+
+        {junkResults && (
+          <Table<API.MaintenanceCleanJunkResult>
+            style={{ marginTop: 16 }}
+            size="small"
+            rowKey="domain"
+            dataSource={junkResults}
+            pagination={false}
+            columns={[
+              { title: 'Domain', dataIndex: 'domain' },
+              { title: 'Server IP', dataIndex: 'ip' },
+              { title: 'Trạng thái', dataIndex: 'status', render: (v) => <Tag color={RESULT_STATUS_COLORS[v] || 'default'}>{STATUS_LABELS[v] || v}</Tag> },
+              {
+                title: 'Dung lượng',
+                dataIndex: 'freed_kb',
+                render: (v: number, r) => `${formatKb(v)}${r.status === 'DRYRUN' ? ' sẽ được giải phóng' : ' đã giải phóng'}`,
               },
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}

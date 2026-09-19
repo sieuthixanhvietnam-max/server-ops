@@ -67,6 +67,13 @@ const ForceIndex: React.FC = () => {
       setCrawlResults(results);
       setSelectedDomains(results.filter((r) => r.url_count > 0).map((r) => r.domain));
       setFromPreset(true);
+      // Invalidate any crawl job left over from a previous manual crawl
+      // earlier in this browser tab (crawlJobId survives navigation via
+      // usePersistedState) - otherwise that job's still-in-flight polling
+      // resolves a moment later and its "success" effect below overwrites
+      // the preset's crawlResults with the old crawl's results, silently
+      // wiping the domain list this page was just handed.
+      setCrawlJobId(undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

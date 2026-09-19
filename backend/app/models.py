@@ -356,3 +356,38 @@ class Job(Base):
     params_json: Mapped[str] = mapped_column(Text, default="{}")
     log: Mapped[str] = mapped_column(Text, default="")
     result_json: Mapped[str] = mapped_column(Text, default="[]")
+    # Machine-readable reason code for a "failed" job, distinct from the
+    # free-text `log` - lets the frontend render a dedicated UI for specific
+    # cases (e.g. "no_internet") instead of parsing log text. None for jobs
+    # that never failed, or failed for a reason with no dedicated UI yet.
+    fail_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class JobTarget(Base):
+    """One row per (job, target label - e.g. a domain being migrated),
+    created up front when a batch job starts and updated as work proceeds -
+    lets a poller show live progress ("12/45 done, currently X") and partial
+    results while the parent Job is still 'running', instead of waiting for
+    the single result_json write that only happens once the whole job ends.
+    Also the shape a future resume feature would query (status != 'success')
+    to find what's left to retry - not implemented yet, but this table is
+    shaped so that doesn't require a rebuild. Not created at all for
+    dry-run jobs (nothing real happens) or for job types that haven't
+    adopted this yet - zero rows here is the normal, fully-supported case;
+    consumers (JobProgressBar, JobResultPanel) degrade to today's behavior.
+
+    Looked up by (job_id, target_label) rather than a ferried-around id, so
+    wiring this into an existing per-target loop (see wp_migrate_ops.py)
+    doesn't require threading a JobTarget/id through code that only ever
+    had the label in scope - fine as long as labels are unique within one
+    job, true for migrate's domains today."""
+
+    __tablename__ = "job_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(Integer, index=True)
+    target_label: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, index=True, default="pending")  # pending|running|success|failed
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    note: Mapped[str] = mapped_column(String, default="")

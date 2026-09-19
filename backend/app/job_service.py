@@ -3,8 +3,11 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import select
+
 from app.database import SessionLocal
-from app.models import Job
+from app.models import Job, JobTarget
+from app.ops.ssh_ops import has_internet_connection
 
 logger = logging.getLogger("job_service")
 
@@ -45,6 +48,60 @@ class JobContext:
             db.close()
         logger.info("[job %s] %s", self.job_id, line)
 
+    def init_targets(self, labels: list[str]):
+        """Call once, before any per-target work starts - creates one
+        'pending' JobTarget per label, in order. Skip entirely for dry-run
+        (nothing real happens, so there's nothing to track progress on)."""
+        db = SessionLocal()
+        try:
+            db.bulk_save_objects(
+                [JobTarget(job_id=self.job_id, target_label=label, status="pending") for label in labels]
+            )
+            db.commit()
+        finally:
+            db.close()
+
+    def start_target(self, label: str):
+        db = SessionLocal()
+        try:
+            target = db.execute(
+                select(JobTarget)
+                .where(JobTarget.job_id == self.job_id, JobTarget.target_label == label, JobTarget.status == "pending")
+                .limit(1)
+            ).scalar_one_or_none()
+            if target is None:
+                return
+            target.status = "running"
+            target.started_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+
+    def finish_target(self, label: str, status: str, note: str = ""):
+        """status: 'success' or 'failed'. Matches whichever row for this
+        label isn't already finished - normally the one start_target() just
+        flipped to 'running', but also covers a target that fails validation
+        before start_target() was ever called (still 'pending')."""
+        db = SessionLocal()
+        try:
+            target = db.execute(
+                select(JobTarget)
+                .where(
+                    JobTarget.job_id == self.job_id,
+                    JobTarget.target_label == label,
+                    JobTarget.status.in_(("pending", "running")),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if target is None:
+                return
+            target.status = status
+            target.note = note
+            target.finished_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+
 
 async def run_job(job_id: int, worker_coro_fn):
     """worker_coro_fn(ctx: JobContext) -> list[dict]  (async function)"""
@@ -60,6 +117,23 @@ async def run_job(job_id: int, worker_coro_fn):
         db.close()
 
     ctx = JobContext(job_id)
+
+    # Fails the whole job in ~3-6s flat instead of letting every target in
+    # a batch (sometimes dozens) each burn its own SSH connect timeout only
+    # to discover the same thing - see ssh_ops.has_internet_connection.
+    if not await asyncio.to_thread(has_internet_connection):
+        ctx.log("[fatal] Không có kết nối Internet - huỷ tác vụ")
+        db = SessionLocal()
+        try:
+            job = db.get(Job, job_id)
+            job.status = "failed"
+            job.fail_reason = "no_internet"
+            job.finished_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+        return
+
     try:
         result = await worker_coro_fn(ctx)
         db = SessionLocal()

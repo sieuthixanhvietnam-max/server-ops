@@ -33,6 +33,7 @@ const DomainList: React.FC = () => {
   const [picOptions, setPicOptions] = useState<{ label: string; value: string }[]>([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [domainsFilter, setDomainsFilter] = useState('');
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   const [credentialMap, setCredentialMap] = useState<Record<string, API.SiteCredential>>({});
 
   // Small side table, fetched whole (not per-row) - keyed by "domain::server"
@@ -51,6 +52,7 @@ const DomainList: React.FC = () => {
     const res = await listDomains({
       ...currentParams,
       domains: domainsFilter || undefined,
+      duplicates_only: duplicatesOnly || undefined,
       current: 1,
       pageSize: 5000,
     });
@@ -251,9 +253,25 @@ const DomainList: React.FC = () => {
           <Button key="export" icon={<DownloadOutlined />} loading={exporting} onClick={handleExportCsv}>
             Xuất CSV
           </Button>,
+          <Button
+            key="duplicates"
+            danger={duplicatesOnly}
+            type={duplicatesOnly ? 'primary' : 'default'}
+            onClick={() => {
+              setDuplicatesOnly((v) => !v);
+              actionRef.current?.reload();
+            }}
+          >
+            ⚠ Chỉ hiện domain trùng server
+          </Button>,
         ]}
         request={async (params, sort) => {
-          const res = await listDomains({ ...params, ...toSortParams(sort), domains: domainsFilter || undefined });
+          const res = await listDomains({
+            ...params,
+            ...toSortParams(sort),
+            domains: domainsFilter || undefined,
+            duplicates_only: duplicatesOnly || undefined,
+          });
           return res;
         }}
         columns={columns}

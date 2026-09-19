@@ -123,6 +123,68 @@ echo "RESULT|OK|$BEFORE|$AFTER"
 """
 
 
+# $1 = domain, $2 = dry_run (1|0). Two sources of junk, both safe to purge
+# unconditionally now that R2 (see r2_ops.py) is this fleet's actual backup
+# system: (1) clone-via-wptt-sao-chep-website (CLONE_SCRIPT in wp_ops.py)
+# copies the whole wp-content dir wholesale, including a source site's
+# leftover renamed-out plugin folders; (2) every WP backup plugin's local
+# export/staging directory - these used to be a real backup before R2, now
+# they're pure redundant disk usage (the plugin itself may even be long
+# deactivated, folder just never got cleaned). luucache is included too even
+# though clear_cache already empties it, so an operator has one button for
+# the whole "reclaim disk" habit instead of two. BackWPup's folder carries a
+# random per-site suffix (backwpup-<hash>-backups), hence the glob.
+CLEAN_JUNK_SCRIPT = """#!/bin/bash
+DOMAIN="$1"
+DRY_RUN="$2"
+if [[ ! -f "/etc/wptt/vhost/.$DOMAIN.conf" ]]; then
+    echo "ERR|not_found|domain not found on server"
+    exit 10
+fi
+PATH_WP="/usr/local/lsws/$DOMAIN/html"
+if [[ ! -f "$PATH_WP/wp-load.php" ]]; then
+    echo "ERR|not_wp|not a WordPress site"
+    exit 12
+fi
+
+# Removed entirely (not just emptied) - clone leftovers or a backup plugin's
+# own export dir, neither is read by the running site.
+REMOVE_ENTIRELY=(
+    "$PATH_WP/wp-content/plugins-old"
+    "$PATH_WP/wp-content/ai1wm-backups"
+    "$PATH_WP/wp-content/updraft"
+    "$PATH_WP/wp-content/backups-dup-lite"
+    "$PATH_WP/wp-content/uploads/duplicator"
+    "$PATH_WP/wp-content/uploads/backupbuddy_backups"
+    "$PATH_WP/wp-content/uploads/wpvivid-backups"
+)
+shopt -s nullglob
+REMOVE_ENTIRELY+=($PATH_WP/wp-content/uploads/backwpup-*-backups)
+
+# Emptied, not removed - OLS/wptt expect this directory to exist.
+LUUCACHE="/usr/local/lsws/$DOMAIN/luucache"
+
+TOTAL_KB=0
+for t in "${REMOVE_ENTIRELY[@]}" "$LUUCACHE"; do
+    if [[ -d "$t" ]]; then
+        SIZE_KB=$(du -sk "$t" 2>/dev/null | cut -f1)
+        TOTAL_KB=$((TOTAL_KB + ${SIZE_KB:-0}))
+    fi
+done
+
+if [[ "$DRY_RUN" == "1" ]]; then
+    echo "RESULT|DRYRUN|$TOTAL_KB"
+    exit 0
+fi
+
+for t in "${REMOVE_ENTIRELY[@]}"; do
+    rm -rf "$t" 2>/dev/null || true
+done
+rm -rf "$LUUCACHE"/* 2>/dev/null || true
+echo "RESULT|OK|$TOTAL_KB"
+"""
+
+
 def _connect_or_fail(ip, profile, log, label):
     user, key, err = ssh_ops.establish_connection(ip, profile)
     if not user:
@@ -180,6 +242,63 @@ def clear_cache(entries: list[dict], log) -> list[dict]:
             except Exception as exc:
                 e = entries[idx]
                 results[idx] = {"domain": e["domain"], "ip": e["ip"], "status": "FAIL", "note": str(exc)}
+    return results
+
+
+def clean_junk(entries: list[dict], log, dry_run: bool = False) -> list[dict]:
+    """entries: [{"domain", "ip", "profile"}]. Removes clone-leftover junk
+    (wp-content/plugins-old) plus every known WP backup plugin's local
+    export directory (AI1WM, UpdraftPlus, Duplicator, BackWPup, BackupBuddy,
+    WPvivid - see CLEAN_JUNK_SCRIPT) and luucache. Safe to delete
+    unconditionally: R2 (r2_ops.py) is this fleet's real backup, so a local
+    plugin backup dir is always redundant, not a last copy. None of these
+    are read by the running site, so no HTTP verify needed afterwards
+    (unlike clear_cache/fix_permissions, which touch things a broken plugin
+    could turn into a white screen). dry_run=True only sums the size that
+    would be freed, deletes nothing."""
+    verb = "Đang tính dung lượng rác cho" if dry_run else "Đang dọn rác cho"
+    log(f"{verb} {len(entries)} domain...")
+
+    def _one(e):
+        domain, ip, profile = e["domain"], e["ip"], e["profile"]
+        label = f"{domain} ({ip})"
+        user, key, err = _connect_or_fail(ip, profile, log, label)
+        if not user:
+            return {"domain": domain, "ip": ip, "status": "FAIL", "freed_kb": 0, "note": err}
+
+        rc, output = ssh_ops.run_remote(
+            ip, user, key, CLEAN_JUNK_SCRIPT, args=[domain, "1" if dry_run else "0"],
+            use_sudo=True, timeout=60,
+        )
+        if output.startswith("ERR|"):
+            note = _err_note(output)
+            log(f"[fail] {label}: {note}")
+            return {"domain": domain, "ip": ip, "status": "FAIL", "freed_kb": 0, "note": note}
+
+        result_line = next((l for l in output.splitlines() if l.startswith("RESULT|")), None)
+        if not result_line:
+            log(f"[fail] {label}: no result (exit {rc})")
+            return {"domain": domain, "ip": ip, "status": "FAIL", "freed_kb": 0, "note": f"no result (exit {rc})"}
+
+        parts = result_line.split("|")
+        freed_kb = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        if dry_run:
+            note = "không có rác" if freed_kb == 0 else "chưa xoá gì (dry-run)"
+            log(f"[ ok ] {label}: {freed_kb} KB rác")
+            return {"domain": domain, "ip": ip, "status": "DRYRUN", "freed_kb": freed_kb, "note": note}
+        log(f"[ ok ] {label}: đã dọn {freed_kb} KB")
+        return {"domain": domain, "ip": ip, "status": "OK", "freed_kb": freed_kb, "note": ""}
+
+    results = [None] * len(entries)
+    with ThreadPoolExecutor(max_workers=settings.ssh_plugin_workers) as pool:
+        futures = {pool.submit(_one, e): idx for idx, e in enumerate(entries)}
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                results[idx] = future.result()
+            except Exception as exc:
+                e = entries[idx]
+                results[idx] = {"domain": e["domain"], "ip": e["ip"], "status": "FAIL", "freed_kb": 0, "note": str(exc)}
     return results
 
 

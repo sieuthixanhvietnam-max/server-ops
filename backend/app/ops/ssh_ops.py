@@ -1,5 +1,6 @@
 import os
 import shlex
+import socket
 import subprocess
 import tempfile
 import threading
@@ -7,6 +8,24 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.config import settings
+
+# Public, highly-available anchors independent of any of this app's own
+# infrastructure - a plain TCP connect (no HTTP/TLS handshake needed) is
+# enough to tell "this machine has no route to the internet" apart from
+# "one specific remote service is down", so a batch job can fail fast with
+# one clear message instead of every target timing out on its own SSH
+# connect (see run_job() in job_service.py, the one call site).
+_INTERNET_CHECK_HOSTS = [("1.1.1.1", 443), ("8.8.8.8", 443)]
+
+
+def has_internet_connection(timeout: float = 3.0) -> bool:
+    for host, port in _INTERNET_CHECK_HOSTS:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except OSError:
+            continue
+    return False
 
 # Profile keys match Server.profile values coming from the sync source
 # (ali_enterprise, gcp_enterprise, do_sgp1, ...), so a server pulled from our
@@ -73,6 +92,26 @@ _SSH_OPTS = [
     "-o", "ControlMaster=auto",
     "-o", f"ControlPath={settings.ssh_control_dir}/%C",
     "-o", "ControlPersist=60s",
+]
+
+# Same as _SSH_OPTS but with NO connection multiplexing - used only by
+# run_remote_streaming. Confirmed live: a killed streaming ssh process
+# doesn't unblock a `for line in proc.stdout` read if a background
+# control-master/muxer from an earlier, unrelated call to the same host is
+# still holding the connection open within its ControlPersist window (same
+# class of issue _try_connect's comment above documents) - the read stayed
+# blocked for the remote command's full natural runtime instead of stopping
+# at the timeout-kill. ssh takes the FIRST occurrence of a repeated `-o`
+# flag, not the last, so this can't be done by appending an override after
+# _SSH_OPTS - confirmed that silently does nothing (ControlMaster=auto from
+# _SSH_OPTS wins). Has to be a clean list with no ControlMaster/ControlPath
+# in it at all. A long-running streamed transfer (rsync, gigabytes) gets
+# negligible benefit from multiplexing anyway - the connection setup cost
+# multiplexing saves is trivial next to the transfer itself.
+_SSH_OPTS_STREAMING = [
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", f"UserKnownHostsFile={settings.ssh_known_hosts_file}",
+    "-o", "BatchMode=yes",
 ]
 
 HEALTH_SCRIPT = """#!/bin/bash
@@ -196,6 +235,64 @@ def run_remote(ip, user, key, script, args=None, use_sudo=False, timeout=30):
         return -1, f"timeout after {timeout}s"
 
 
+def run_remote_streaming(ip, user, key, script, args=None, use_sudo=False, timeout=30, on_line=None):
+    """Same contract/return shape as run_remote((rc, full_output)) - but
+    calls on_line(line) as each line of remote output arrives, instead of
+    blocking until the whole command finishes and returning everything at
+    once. For long-running remote scripts (rsync transferring gigabytes)
+    where the caller wants live progress rather than the job's log column
+    staying frozen for the entire duration - see wp_migrate_ops.py's rsync
+    call, the one place this is used today.
+
+    Timeout is enforced with a background timer that kills the process
+    (subprocess.run's own `timeout=` has no equivalent for a live-streaming
+    Popen) - a `threading.Event` distinguishes "we killed it" from "it
+    exited on its own" right as the timer fires, avoiding the race a naive
+    "did the timer already fire" check would have.
+    """
+    remote_shell = "sudo bash -s --" if use_sudo else "bash -s --"
+    quoted_args = " ".join(shlex.quote(a) for a in (args or []))
+    remote_cmd = f"{remote_shell} {quoted_args}".strip()
+
+    cmd = ["ssh", "-i", key] + _SSH_OPTS_STREAMING + [f"{user}@{ip}", remote_cmd]
+    proc = subprocess.Popen(
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    )
+    timed_out = threading.Event()
+
+    def _kill_on_timeout():
+        timed_out.set()
+        proc.kill()
+
+    timer = threading.Timer(timeout, _kill_on_timeout)
+    timer.start()
+    lines: list[str] = []
+    try:
+        try:
+            proc.stdin.write(script)
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+        for raw_line in proc.stdout:
+            line = raw_line.rstrip("\n")
+            lines.append(line)
+            if on_line:
+                on_line(line)
+        proc.wait()
+    finally:
+        timer.cancel()
+
+    output = "\n".join(lines)
+    if timed_out.is_set():
+        return -1, (output + "\n" if output else "") + f"timeout after {timeout}s"
+    return proc.returncode, output
+
+
 def put_file(ip, user, key, local_path, remote_path, timeout=120):
     """Copy a local file to the remote host via `scp`, reusing the same host-key
     pinning / multiplexing options as run_remote."""
@@ -264,6 +361,38 @@ def restart_litespeed(ip: str, user: str, key: str, log, min_interval: int = _LS
         return True
     log(f"    [warn] {ip}: LiteSpeed restart uncertain: {out[-200:]}")
     return False
+
+
+_wptt_create_locks: dict[str, threading.Lock] = {}
+_wptt_create_locks_meta_lock = threading.Lock()
+
+
+def wptt_create_lock(ip: str) -> threading.Lock:
+    """Lock scoped to a single destination IP - hold it for the whole
+    duration of an IMPORT_SCRIPT call (wp_migrate_ops.py), not just its
+    wptt-themwebsite portion (that script is one SSH round-trip, not
+    splittable from the Python side), so two domains going to the SAME
+    destination serialize, while domains going to different destinations
+    don't block each other at all.
+
+    Why this is needed: wptt-themwebsite (called by IMPORT_SCRIPT whenever
+    a domain's vhost doesn't exist yet) edits /etc/ssh/sshd_config with
+    `sed -i` + `cat >>` (not atomic) and then `systemctl restart sshd`, on
+    every single call - confirmed by reading the script directly on a live
+    server (139.59.227.174), not assumed. Two concurrent calls against the
+    same destination could corrupt that shared config file. Registry
+    pattern (a lock per IP, created on first use under a small meta-lock)
+    rather than one global lock, so this only serializes what actually
+    needs it - a different destination server proceeds immediately.
+
+    This only serializes calls THIS process makes over SSH - it can't
+    protect against something else (a human using wptt's own menu, say)
+    touching the same server at the same moment. Accepted narrow residual
+    risk: this app is the only automated caller in practice."""
+    with _wptt_create_locks_meta_lock:
+        if ip not in _wptt_create_locks:
+            _wptt_create_locks[ip] = threading.Lock()
+        return _wptt_create_locks[ip]
 
 
 def _parse_health_output(output: str) -> dict:

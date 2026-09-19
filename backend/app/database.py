@@ -58,3 +58,4 @@ def ensure_schema_migrations() -> None:
         _add_column_if_missing(conn, "servers", "last_health_note", "VARCHAR DEFAULT ''")
         _add_column_if_missing(conn, "servers", "last_health_checked_at", _TIMESTAMP_TYPE)
         _add_column_if_missing(conn, "changelog_entries", "change_type", "VARCHAR DEFAULT 'fix'")
+        _add_column_if_missing(conn, "jobs", "fail_reason", "VARCHAR")

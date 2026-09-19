@@ -39,6 +39,9 @@ def list_domains(
     server_name: str | None = Query(None, description="Filter by server name"),
     profile: str | None = Query(None),
     pic: str | None = Query(None, description="PIC code, or '__unassigned__' for no PIC"),
+    duplicates_only: bool = Query(
+        False, description="Only domains that appear on more than one distinct server_name"
+    ),
     sort_field: str | None = Query(None),
     sort_order: str | None = Query(None, description="'ascend' or 'descend'"),
 ):
@@ -57,6 +60,13 @@ def list_domains(
         stmt = stmt.where(Domain.profile == profile)
     if pic:
         stmt = stmt.where(Domain.server_name.in_(server_names_for_pic(db, pic)))
+    if duplicates_only:
+        dup_domains = (
+            select(Domain.domain)
+            .group_by(Domain.domain)
+            .having(func.count(func.distinct(Domain.server_name)) > 1)
+        )
+        stmt = stmt.where(Domain.domain.in_(dup_domains))
 
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     stmt = apply_sort(stmt, _SORTABLE, sort_field, sort_order, default=Domain.domain)

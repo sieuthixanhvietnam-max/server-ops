@@ -25,7 +25,7 @@ from app.crypto import decrypt_token
 from app.database import SessionLocal, get_db
 from app.health_service import health_check_lock, persist_health_results
 from app.job_service import create_job, launch_job
-from app.models import CfAccount, CfZone, Domain, IndexerCredential, Job, MuPlugin, PluginZip, Server, ThemeZip
+from app.models import CfAccount, CfZone, Domain, IndexerCredential, Job, JobTarget, MuPlugin, PluginZip, Server, ThemeZip
 from app.ops import (
     cf_ops,
     index_ops,
@@ -238,6 +238,11 @@ class MaintenanceFixPermissionsRequest(BaseModel):
     dry_run: bool = True
 
 
+class MaintenanceCleanJunkRequest(BaseModel):
+    domains: list[str]
+    dry_run: bool = True
+
+
 class RestoreEntry(BaseModel):
     domain: str
     source_server: str
@@ -354,7 +359,7 @@ def _resolve_destination_server(db: Session, server_name: str) -> Server | None:
     return db.execute(select(Server).where(Server.server_name == server_name)).scalar_one_or_none()
 
 
-def _job_out(job: Job) -> dict:
+def _job_out(job: Job, targets: list[JobTarget] | None = None, include_log: bool = True) -> dict:
     return {
         "id": job.id,
         "job_type": job.job_type,
@@ -365,8 +370,23 @@ def _job_out(job: Job) -> dict:
         "started_at": job.started_at,
         "finished_at": job.finished_at,
         "params": json.loads(job.params_json),
-        "log": job.log,
+        # list_jobs() passes include_log=False - its rows never render `log`
+        # (job-history's table only shows a status summary), and a job's log
+        # can run to tens of thousands of lines (confirmed in production),
+        # which is wasteful to ship on every paginated list load.
+        "log": job.log if include_log else "",
         "result": json.loads(job.result_json),
+        "fail_reason": job.fail_reason,
+        # [] for job types that don't populate job_targets (most of them,
+        # today) or for list_jobs() rows (progress bars only matter for the
+        # single job actually being watched, not a list of history rows).
+        "targets": [
+            {
+                "id": t.id, "target_label": t.target_label, "status": t.status,
+                "started_at": t.started_at, "finished_at": t.finished_at, "note": t.note,
+            }
+            for t in (targets or [])
+        ],
     }
 
 
@@ -1546,6 +1566,34 @@ async def trigger_maintenance_fix_permissions(
     return {"job_id": job.id}
 
 
+@router.post("/maintenance-clean-junk")
+async def trigger_maintenance_clean_junk(
+    body: MaintenanceCleanJunkRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_current_username),
+):
+    if not body.domains:
+        raise HTTPException(status_code=400, detail="domains list is empty")
+    entries, errors = _resolve_plugin_entries(db, body.domains)
+    if not entries:
+        raise HTTPException(status_code=400, detail="No valid entries: " + "; ".join(errors))
+
+    job = create_job(
+        db, "maintenance_clean_junk",
+        {"domains": body.domains, "dry_run": body.dry_run, "resolve_errors": errors},
+        username, get_client_ip(request),
+    )
+
+    async def worker(ctx):
+        for e in errors:
+            ctx.log(f"[skip] {e}")
+        return await asyncio.to_thread(wp_maintenance_ops.clean_junk, entries, ctx.log, body.dry_run)
+
+    launch_job(job.id, worker)
+    return {"job_id": job.id}
+
+
 def _resolve_restore_entries(
     db: Session, body_entries: list[RestoreEntry], destination_server: str,
 ) -> tuple[list[dict], list[str], object | None]:
@@ -1668,7 +1716,12 @@ async def trigger_migrate_wpsite(
     async def worker(ctx):
         for e in errors:
             ctx.log(f"[skip] {e}")
-        return await asyncio.to_thread(wp_migrate_ops.migrate_wpsite, entries, ctx.log, body.dry_run)
+        if not body.dry_run:
+            ctx.init_targets([e["domain"] for e in entries])
+        return await asyncio.to_thread(
+            wp_migrate_ops.migrate_wpsite, entries, ctx.log, body.dry_run,
+            on_start=ctx.start_target, on_finish=ctx.finish_target,
+        )
 
     launch_job(job.id, worker)
     return {"job_id": job.id}
@@ -1679,7 +1732,10 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return _job_out(job)
+    targets = db.execute(
+        select(JobTarget).where(JobTarget.job_id == job_id).order_by(JobTarget.id)
+    ).scalars().all()
+    return _job_out(job, targets=targets)
 
 
 @router.get("")
@@ -1713,4 +1769,4 @@ def list_jobs(
         .scalars()
         .all()
     )
-    return {"data": [_job_out(r) for r in rows], "total": total, "success": True}
+    return {"data": [_job_out(r, include_log=False) for r in rows], "total": total, "success": True}

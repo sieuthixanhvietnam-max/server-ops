@@ -1,6 +1,8 @@
 import JobLogPanel from '@/components/JobLogPanel';
+import JobProgressBar from '@/components/JobProgressBar';
 import JobResultPanel from '@/components/JobResultPanel';
-import { getJob, listJobs } from '@/services/serverOps/api';
+import { useJobPolling } from '@/hooks/useJobPolling';
+import { listJobs } from '@/services/serverOps/api';
 import {
   JOB_STATUS_COLORS,
   JOB_STATUS_LABELS,
@@ -35,8 +37,14 @@ const JobHistory: React.FC = () => {
   const { token } = theme.useToken();
   const actionRef = useRef<ActionType | null>(null);
   const formRef = useRef<ProFormInstance | undefined>(undefined);
-  const [detailJob, setDetailJob] = useState<API.JobDetail>();
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailJobId, setDetailJobId] = useState<number>();
+  // useJobPolling already stops polling once the job is success/failed, so
+  // opening an already-finished job (the common case) costs one fetch just
+  // like the old one-time getJob() call did - the only behavior change is a
+  // still-`running` job now keeps updating live instead of showing whatever
+  // it looked like the instant the Drawer opened.
+  const detailJob = useJobPolling(detailJobId);
+  const detailLoading = !!detailJobId && !detailJob;
 
   const applyLast24hFailedFilter = () => {
     formRef.current?.setFieldsValue({
@@ -44,16 +52,6 @@ const JobHistory: React.FC = () => {
       created_at: [dayjs().subtract(24, 'hour'), dayjs()],
     });
     formRef.current?.submit();
-  };
-
-  const openDetail = async (id: number) => {
-    setDetailLoading(true);
-    try {
-      const job = await getJob(id);
-      setDetailJob(job);
-    } finally {
-      setDetailLoading(false);
-    }
   };
 
   const columns: ProColumns<API.JobDetail>[] = [
@@ -120,7 +118,7 @@ const JobHistory: React.FC = () => {
       title: 'Hành động',
       search: false,
       render: (_, r) => (
-        <Button size="small" onClick={() => openDetail(r.id)}>
+        <Button size="small" onClick={() => setDetailJobId(r.id)}>
           Xem chi tiết
         </Button>
       ),
@@ -147,8 +145,8 @@ const JobHistory: React.FC = () => {
 
       <Drawer
         title={detailJob ? `Job #${detailJob.id} - ${JOB_TYPE_LABELS[detailJob.job_type] || detailJob.job_type}` : ''}
-        open={!!detailJob}
-        onClose={() => setDetailJob(undefined)}
+        open={!!detailJobId}
+        onClose={() => setDetailJobId(undefined)}
         width={720}
         loading={detailLoading}
         destroyOnHidden
@@ -182,6 +180,7 @@ const JobHistory: React.FC = () => {
 
             <Typography.Title level={5}>Log</Typography.Title>
             <JobLogPanel job={detailJob} />
+            <JobProgressBar job={detailJob} />
 
             <Typography.Title level={5} style={{ marginTop: 16 }}>
               Kết quả

@@ -13,6 +13,7 @@ export async function listDomains(
     server_name?: string;
     profile?: string;
     pic?: string;
+    duplicates_only?: boolean;
     sort_field?: string;
     sort_order?: string;
   },
@@ -1111,6 +1112,19 @@ export async function triggerMaintenanceFixPermissions(
   options?: { [key: string]: any },
 ) {
   return request<{ job_id: number }>('/api/jobs/maintenance-fix-permissions', {
+    method: 'POST',
+    data: { domains, dry_run },
+    ...(options || {}),
+  });
+}
+
+/** POST /api/jobs/maintenance-clean-junk */
+export async function triggerMaintenanceCleanJunk(
+  domains: string[],
+  dry_run: boolean,
+  options?: { [key: string]: any },
+) {
+  return request<{ job_id: number }>('/api/jobs/maintenance-clean-junk', {
     method: 'POST',
     data: { domains, dry_run },
     ...(options || {}),

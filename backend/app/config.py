@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     ssh_health_workers: int = 20
     ssh_plugin_workers: int = 5
     ssh_restore_workers: int = 5
+    # Mặc định thận trọng - khác các *_workers khác (restore/plugin), đây là
+    # lần đầu cho phép nhiều domain rsync+mysqldump THẬT cùng lúc trên cùng
+    # 1 server nguồn đang phục vụ traffic sống. Nên tăng dần và theo dõi
+    # CPU/RAM server nguồn qua health-check trong lúc chạy thật, không đoán
+    # số - xem wp_migrate_ops.py, ssh_ops.wptt_create_lock.
+    ssh_migrate_workers: int = 3
     plugin_zip_dir: str = os.path.expanduser("~/.server-ops/plugin-zips")
     theme_zip_dir: str = os.path.expanduser("~/.server-ops/theme-zips")
     mu_plugin_dir: str = os.path.expanduser("~/.server-ops/mu-plugins")

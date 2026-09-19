@@ -5,8 +5,9 @@ import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { triggerCfRemove } from '@/services/serverOps/api';
 import { PageContainer } from '@ant-design/pro-components';
+import { useLocation } from '@umijs/max';
 import { Alert, App, Button, Card, Input, Table, Tag } from 'antd';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 const { TextArea } = Input;
 
@@ -29,10 +30,19 @@ const parseDomains = (text: string) =>
 
 const CfRemove: React.FC = () => {
   const { message } = App.useApp();
+  const location = useLocation();
   const [text, setText] = usePersistedState('cf-remove:text', '');
   const [jobId, setJobId] = usePersistedState<number | undefined>('cf-remove:jobId', undefined);
   const [running, setRunning] = useState(false);
   const job = useJobPolling(jobId);
+
+  useEffect(() => {
+    const preset = (location.state as { domains?: string[] } | undefined)?.domains;
+    if (preset?.length) {
+      setText(preset.join('\n'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const domains = parseDomains(text);
 

@@ -117,6 +117,28 @@ declare namespace API {
     // summary dict ({discovered, zones}) instead of a row list. Consumers
     // that need to handle both shapes (JobResultPanel) cast this themselves.
     result: any[];
+    // Machine-readable reason for a "failed" job (e.g. "no_internet") -
+    // lets the UI render a dedicated state instead of parsing `log` text.
+    // null for jobs that never failed, or failed for an as-yet-unclassified
+    // reason (falls back to the generic error display).
+    fail_reason: string | null;
+    // One row per (job, target label - e.g. a domain being migrated),
+    // populated live as work proceeds - [] for job types that haven't
+    // adopted this yet, or for list_jobs() rows (progress bars only matter
+    // for the single job actually being watched). See JobProgressBar and
+    // JobResultPanel's "render while running" branch.
+    targets: JobTarget[];
+  };
+
+  type JobTargetStatus = 'pending' | 'running' | 'success' | 'failed';
+
+  type JobTarget = {
+    id: number;
+    target_label: string;
+    status: JobTargetStatus;
+    started_at: string | null;
+    finished_at: string | null;
+    note: string;
   };
 
   type CheckIpResult = {
@@ -534,6 +556,14 @@ declare namespace API {
     after: number;
     note: string;
     verify?: VerifyInfo;
+  };
+
+  type MaintenanceCleanJunkResult = {
+    domain: string;
+    ip: string;
+    status: 'OK' | 'DRYRUN' | 'FAIL';
+    freed_kb: number;
+    note: string;
   };
 
   type BackupCatalogRow = {
