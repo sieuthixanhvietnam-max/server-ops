@@ -245,12 +245,45 @@ echo "  Importing SQL (${SQL_SIZE}KB)..."
 echo "  SQL imported OK"
 
 echo "[4/5] Fixing wp-config.php (wptt-ket-noi)..."
-bash /etc/wptt/db/wptt-ket-noi "$DOMAIN" >/dev/null 2>&1 || true
+if ! bash /etc/wptt/db/wptt-ket-noi "$DOMAIN" >/dev/null 2>&1; then
+    echo "  [warn] wptt-ket-noi exited non-zero for $DOMAIN - not treated as fatal here,"
+    echo "  the [6/6] check below verifies the actual outcome (a non-zero exit here isn't"
+    echo "  a fully trusted signal on its own, but silently discarding it like before is worse)"
+fi
 
 echo "[5/5] Fixing permissions (wptt-phanquyen)..."
-bash /etc/wptt/wptt-phanquyen "$DOMAIN" >/dev/null 2>&1 || true
+if ! bash /etc/wptt/wptt-phanquyen "$DOMAIN" >/dev/null 2>&1; then
+    echo "  [warn] wptt-phanquyen exited non-zero for $DOMAIN"
+fi
 
 rm -rf "/usr/local/lsws/$DOMAIN/luucache" 2>/dev/null || true
+
+# [6/6] Real outcome check, not trusting wptt-ket-noi's exit code alone: this
+# is the same class of bug as the DB_Password_web/AES incident (job #2788) -
+# re-reads whatever wp-config.php actually ended up with and tries to log in
+# with it, instead of assuming the earlier steps worked because they didn't
+# error. Also re-checks the vhost conf file itself still exists, since its
+# disappearance after a successful [1/5] is the still-unexplained failure
+# mode found in production 2026-09 (202 domains needed manual repair) -
+# this at least turns a silent recurrence into an immediate RESULT|FAIL
+# instead of a days-later discovery via the backup script.
+echo "[6/6] Verifying vhost + DB credentials actually work..."
+if [[ ! -f "/etc/wptt/vhost/.$DOMAIN.conf" ]]; then
+    echo "RESULT|FAIL|vhost config disappeared after import (was present at step 1, gone now)"
+    exit 1
+fi
+
+WP_DB_NAME=$(grep -oP "define\\(\\s*'DB_NAME',\\s*'\\K[^']+" "$WP_PATH/wp-config.php" 2>/dev/null || true)
+WP_DB_USER=$(grep -oP "define\\(\\s*'DB_USER',\\s*'\\K[^']+" "$WP_PATH/wp-config.php" 2>/dev/null || true)
+WP_DB_PASS=$(grep -oP "define\\(\\s*'DB_PASSWORD',\\s*'\\K[^']+" "$WP_PATH/wp-config.php" 2>/dev/null || true)
+if [[ -z "$WP_DB_NAME" || -z "$WP_DB_USER" || -z "$WP_DB_PASS" ]]; then
+    echo "RESULT|FAIL|wp-config.php missing DB credentials after wptt-ket-noi"
+    exit 1
+fi
+if ! mariadb -u "$WP_DB_USER" -p"$WP_DB_PASS" -h localhost "$WP_DB_NAME" -e "SELECT 1;" >/dev/null 2>&1; then
+    echo "RESULT|FAIL|wp-config.php DB credentials do not authenticate (wptt-ket-noi did not apply correctly)"
+    exit 1
+fi
 
 echo "RESULT|OK|$DOMAIN imported successfully (DB: ${DB_Name_web}, SQL: ${SQL_SIZE}KB)"
 """
@@ -450,19 +483,27 @@ def migrate_wpsite(
                 # on the destination (e.g. the 7mcn.mobile PHP hang incident)
                 # never gets real traffic pointed at it in the first place;
                 # the source keeps serving it untouched until re-run.
-                # Keyed by idx, not domain - migrated_ok can (in principle)
-                # contain the same domain twice within one job (e.g. a user
-                # adding the same domain in 2 rows), and keying by domain
-                # string would silently coalesce their independent verify
-                # results into one.
+                #
+                # Uses poll_http_via_ssh_batch (retries up to 90s, all domains
+                # concurrently) instead of one immediate single-shot check per
+                # domain, run sequentially - a single 10s curl right after
+                # LSWS restart was catching brand-new HTTPS vhosts still cold
+                # (real first-connect latency seen live: ~14s) as false
+                # "không phản hồi", skipping their DNS cutover for nothing.
+                # Safe to key results by domain string here specifically
+                # because every domain in migrated_ok shares this same
+                # dest_ip (one _run_group call = one source/dest pair) - a
+                # duplicate domain string within the group really is the
+                # same target, so coalescing its result is correct, unlike
+                # results[] below which stays keyed by idx.
+                unique_domains = sorted({domain for _, domain in migrated_ok})
+                batch_results = verify_ops.poll_http_via_ssh_batch(
+                    [{"ip": dest_ip, "user": dst_user, "key": dst_key, "domain": d} for d in unique_domains],
+                )
                 verify_results: dict[int, dict] = {}
                 for idx, domain in migrated_ok:
-                    http_status, ok = verify_ops.check_http_via_ssh(dest_ip, dst_user, dst_key, domain)
-                    verify_results[idx] = {
-                        "http_status": http_status, "ok": ok,
-                        "note": f"site sống (HTTP {http_status})" if ok else f"site không phản hồi (HTTP {http_status})",
-                    }
-                    log(f"[{'ok' if ok else 'warn'}] {domain}: {verify_results[idx]['note']}")
+                    verify_results[idx] = batch_results[domain]
+                    log(f"[{'ok' if verify_results[idx]['ok'] else 'warn'}] {domain}: {verify_results[idx]['note']}")
 
                 # ---- DNS (bulk, reuses cf_ops.change_ip) - only for domains
                 # that verified OK ----
