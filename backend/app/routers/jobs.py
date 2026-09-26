@@ -1753,11 +1753,13 @@ def redirect_weekly_report(
     report. Confirmed as a real, user-reported discrepancy, not a
     theoretical one.
 
-    Excludes settings.admin_username - the break-glass admin account isn't
-    a real PIC, and its historical redirect runs (bulk setup/test work, not
-    routine per-PIC attribution) would otherwise skew the per-PIC counts
-    and leaderboard. This only affects this report's aggregation - the
-    underlying Job rows are untouched, still visible in Job History."""
+    Excludes the literal username "admin" - NOT settings.admin_username
+    (that's the current break-glass account, 'ssop' in production, unrelated).
+    "admin" is a since-deleted/renamed user whose old jobs still carry that
+    string in created_by (a plain snapshot, not an FK - see Job model), and
+    those historical bulk runs would otherwise skew the per-PIC counts and
+    leaderboard, per the user's explicit request. Report-only exclusion -
+    the underlying Job rows are untouched, still visible in Job History."""
     since = date_from or (datetime.utcnow() - timedelta(weeks=weeks))
     until = date_to or datetime.utcnow()
     rows = db.execute(
@@ -1767,7 +1769,7 @@ def redirect_weekly_report(
             Job.status == "success",
             Job.created_at >= since,
             Job.created_at <= until,
-            Job.created_by != settings.admin_username,
+            Job.created_by != "admin",
         )
         .order_by(Job.created_at)
     ).all()
