@@ -97,7 +97,10 @@ type Range = [dayjs.Dayjs, dayjs.Dayjs];
 const RedirectReport: React.FC = () => {
   const { message } = App.useApp();
   const { token } = theme.useToken();
-  const [range, setRange] = useState<Range>(() => [mondayOf(dayjs()).subtract(7, 'week'), dayjs()]);
+  // Default to 6 weeks - with the pivot table's column widths, that's the
+  // most that fits on a typical desktop viewport without horizontal
+  // scroll; picking a longer range still works, it just scrolls again.
+  const [range, setRange] = useState<Range>(() => [mondayOf(dayjs()).subtract(5, 'week'), dayjs()]);
   const [picFilter, setPicFilter] = useState<string>();
   const [domainSearch, setDomainSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -305,7 +308,7 @@ const RedirectReport: React.FC = () => {
       title: 'PIC',
       dataIndex: 'pic',
       fixed: 'left' as const,
-      width: 170,
+      width: 130,
       render: (v: string, row: any) => {
         if (row.key === '__total__') return <Text strong>{v}</Text>;
         const active = picFilter === v;
@@ -332,17 +335,21 @@ const RedirectReport: React.FC = () => {
     ...weekStarts.map((ws) => ({
       title:
         ws === currentWeekStart ? (
-          <Space size={4}>
+          <Text strong style={{ color: token.colorPrimary, whiteSpace: 'nowrap' }}>
             {weekLabel(ws)}
-            <Tag color="blue">Tuần này</Tag>
-          </Space>
+          </Text>
         ) : (
           weekLabel(ws)
         ),
       dataIndex: ws,
       align: 'center' as const,
-      width: 140,
-      onHeaderCell: () => (ws === currentWeekStart ? { style: { background: token.colorPrimaryBg } } : {}),
+      width: 108,
+      onHeaderCell: () => ({
+        style: {
+          whiteSpace: 'nowrap',
+          ...(ws === currentWeekStart ? { background: token.colorPrimaryBg } : {}),
+        },
+      }),
       onCell: (row: any) => {
         const count = row[ws] || 0;
         const style: React.CSSProperties = { cursor: count ? 'pointer' : 'default' };
@@ -363,11 +370,12 @@ const RedirectReport: React.FC = () => {
       },
     })),
     {
-      title: 'Tổng cả kỳ',
+      title: 'Tổng kỳ',
       dataIndex: '__periodTotal__',
       fixed: 'right' as const,
       align: 'right' as const,
-      width: 110,
+      width: 90,
+      onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
       render: (_: unknown, row: any) => (
         <Text strong style={{ color: token.colorPrimary }}>
           {(row.__periodTotal__ as number).toLocaleString('vi-VN')}
@@ -545,6 +553,7 @@ const RedirectReport: React.FC = () => {
       >
         <Table
           rowKey="key"
+          size="small"
           loading={loading}
           columns={columns}
           dataSource={dataSource}
