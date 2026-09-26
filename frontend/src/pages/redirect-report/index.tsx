@@ -91,10 +91,19 @@ const RedirectReport: React.FC = () => {
 
   const pics = useMemo(() => Array.from(new Set(items.map((r) => r.pic || UNKNOWN_PIC))).sort(), [items]);
 
-  // Applying the PIC/domain filters before dedup so every downstream number
-  // (KPI cards, chart, leaderboard, pivot table, export) reflects the same
+  // Applying the PIC/domain filters here so every downstream number (KPI
+  // cards, chart, leaderboard, pivot table, export) reflects the same
   // filtered view - one filter pipeline, no risk of the chart and table
   // silently disagreeing.
+  //
+  // Every successful redirect action counts, including a domain redirected
+  // more than once in the same week (each run is a separate "lượt") - a
+  // deliberate choice after a real case (job #2866) where collapsing to
+  // "latest action per domain" made a job look like it only touched 4
+  // domains when it actually processed way more; some were just redirected
+  // again later by a different job. Counting every action avoids that kind
+  // of confusion, at the cost of the total no longer being "distinct
+  // domains touched" - it's "redirect actions performed".
   const filteredItems = useMemo(() => {
     const search = domainSearch.trim().toLowerCase();
     return items.filter(
@@ -102,37 +111,23 @@ const RedirectReport: React.FC = () => {
     );
   }, [items, picFilter, domainSearch]);
 
-  // Dedup to 1 row per (pic, week_start, domain) - a domain redirected more
-  // than once in the same week counts once, keeping the latest action.
-  const deduped = useMemo(() => {
-    const map = new Map<string, API.RedirectWeeklyItem>();
-    for (const item of filteredItems) {
-      const key = `${item.pic}|${item.week_start}|${item.domain}`;
-      const existing = map.get(key);
-      if (!existing || item.redirected_at > existing.redirected_at) {
-        map.set(key, item);
-      }
-    }
-    return Array.from(map.values());
-  }, [filteredItems]);
-
   const weekStarts = useMemo(() => weekStartsBetween(range[0], range[1]), [range]);
   const currentWeekStart = useMemo(() => mondayOf(dayjs()).format('YYYY-MM-DD'), []);
 
   const filteredPics = useMemo(
-    () => Array.from(new Set(deduped.map((r) => r.pic || UNKNOWN_PIC))).sort(),
-    [deduped],
+    () => Array.from(new Set(filteredItems.map((r) => r.pic || UNKNOWN_PIC))).sort(),
+    [filteredItems],
   );
 
   const counts = useMemo(() => {
     const out: Record<string, Record<string, number>> = {};
-    for (const r of deduped) {
+    for (const r of filteredItems) {
       const pic = r.pic || UNKNOWN_PIC;
       out[pic] = out[pic] || {};
       out[pic][r.week_start] = (out[pic][r.week_start] || 0) + 1;
     }
     return out;
-  }, [deduped]);
+  }, [filteredItems]);
 
   const weekTotal = (ws: string) => filteredPics.reduce((sum, pic) => sum + (counts[pic]?.[ws] || 0), 0);
 
@@ -157,13 +152,13 @@ const RedirectReport: React.FC = () => {
     filteredPics,
   ]);
 
-  // Rows for the selected cell, grouped so domains sharing the same target
-  // URL sit next to each other (biggest cluster first) instead of plain
-  // alphabetical order - the whole point of grouping is to make clusters
-  // visually contiguous, not just colored.
+  // Every redirect action for the selected cell (no dedup - includes a
+  // domain redirected more than once that week as separate rows), grouped
+  // so domains sharing the same target URL sit next to each other (biggest
+  // cluster first) instead of plain alphabetical order.
   const cellDetail = useMemo(() => {
     if (!detailCell) return [];
-    const rows = deduped.filter(
+    const rows = filteredItems.filter(
       (r) => (r.pic || UNKNOWN_PIC) === detailCell.pic && r.week_start === detailCell.weekStart,
     );
     const byUrl = new Map<string, API.RedirectWeeklyItem[]>();
@@ -172,15 +167,35 @@ const RedirectReport: React.FC = () => {
       list.push(r);
       byUrl.set(r.target_url, list);
     }
-    for (const list of byUrl.values()) list.sort((a, b) => (a.domain < b.domain ? -1 : 1));
+    for (const list of byUrl.values()) {
+      list.sort((a, b) => (a.domain < b.domain ? -1 : 1) || (a.redirected_at < b.redirected_at ? -1 : 1));
+    }
     return Array.from(byUrl.entries())
       .sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))
       .flatMap(([, list]) => list);
-  }, [deduped, detailCell]);
+  }, [filteredItems, detailCell]);
 
-  const urlCounts = useMemo(() => {
+  // Number of redirect actions ("lượt") per domain within the cell - flags
+  // a domain that was touched more than once that week, which is exactly
+  // the case that prompted this report to stop deduping (see job #2866).
+  const domainLuotCounts = useMemo(() => {
     const out = new Map<string, number>();
-    for (const r of cellDetail) out.set(r.target_url, (out.get(r.target_url) || 0) + 1);
+    for (const r of cellDetail) out.set(r.domain, (out.get(r.domain) || 0) + 1);
+    return out;
+  }, [cellDetail]);
+
+  // Distinct domains per target URL - a domain redirected twice to the same
+  // target is still 1 domain "in the cluster", not 2, so this counts unique
+  // domains, not raw action rows.
+  const urlDomainCounts = useMemo(() => {
+    const byUrl = new Map<string, Set<string>>();
+    for (const r of cellDetail) {
+      const set = byUrl.get(r.target_url) || new Set<string>();
+      set.add(r.domain);
+      byUrl.set(r.target_url, set);
+    }
+    const out = new Map<string, number>();
+    for (const [url, set] of byUrl) out.set(url, set.size);
     return out;
   }, [cellDetail]);
 
@@ -189,14 +204,14 @@ const RedirectReport: React.FC = () => {
   const clusterColors = useMemo(() => {
     const colors = new Map<string, string>();
     let i = 0;
-    for (const [url, count] of urlCounts) {
+    for (const [url, count] of urlDomainCounts) {
       if (count > 1) {
         colors.set(url, CLUSTER_PALETTE[i % CLUSTER_PALETTE.length]);
         i += 1;
       }
     }
     return colors;
-  }, [urlCounts]);
+  }, [urlDomainCounts]);
 
   const detailRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -214,16 +229,16 @@ const RedirectReport: React.FC = () => {
     ]);
 
   const exportAll = () => {
-    if (!deduped.length) {
+    if (!filteredItems.length) {
       message.warning('Không có dữ liệu để xuất');
       return;
     }
     exportToCsv(
       `redirect-301-theo-pic-${dayjs().format('YYYY-MM-DD')}.csv`,
       ['PIC', 'Tuần', 'Domain', 'Target URL', 'Thời điểm redirect', 'Job ID'],
-      exportRows(deduped),
+      exportRows(filteredItems),
     );
-    message.success(`Đã xuất ${deduped.length} dòng`);
+    message.success(`Đã xuất ${filteredItems.length} dòng`);
   };
 
   const exportCell = () => {
@@ -298,7 +313,7 @@ const RedirectReport: React.FC = () => {
         }}
       >
         <Card size="small">
-          <Statistic title="Tuần gần nhất" value={lastWeekTotal} suffix="domain" />
+          <Statistic title="Tuần gần nhất" value={lastWeekTotal} suffix="lượt" />
         </Card>
         <Card size="small">
           <Statistic
@@ -364,7 +379,7 @@ const RedirectReport: React.FC = () => {
           columns={[
             { title: '#', render: (_: unknown, __: unknown, i: number) => i + 1, width: 50 },
             { title: 'PIC', dataIndex: 'pic' },
-            { title: 'Số domain', dataIndex: 'count', sorter: (a: any, b: any) => a.count - b.count },
+            { title: 'Số lượt', dataIndex: 'count', sorter: (a: any, b: any) => a.count - b.count },
           ]}
         />
       </Card>
@@ -384,7 +399,7 @@ const RedirectReport: React.FC = () => {
       {detailCell && (
         <div ref={detailRef}>
           <Card
-            title={`${detailCell.pic} — ${weekLabel(detailCell.weekStart)} (${cellDetail.length} domain)`}
+            title={`${detailCell.pic} — ${weekLabel(detailCell.weekStart)} (${cellDetail.length} lượt)`}
             extra={
               <Space>
                 <Button icon={<DownloadOutlined />} onClick={exportCell}>
@@ -404,12 +419,24 @@ const RedirectReport: React.FC = () => {
                 return color ? { style: { background: color } } : {};
               }}
               columns={[
-                { title: 'Domain', dataIndex: 'domain' },
+                {
+                  title: 'Domain',
+                  dataIndex: 'domain',
+                  render: (v: string) => {
+                    const luot = domainLuotCounts.get(v) || 0;
+                    return (
+                      <Space size={6}>
+                        {v}
+                        {luot > 1 && <Tag color="gold">{luot} lượt</Tag>}
+                      </Space>
+                    );
+                  },
+                },
                 {
                   title: 'Target URL',
                   dataIndex: 'target_url',
                   render: (v: string) => {
-                    const count = urlCounts.get(v) || 0;
+                    const count = urlDomainCounts.get(v) || 0;
                     return (
                       <Space size={6}>
                         {v}
