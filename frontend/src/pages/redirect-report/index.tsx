@@ -95,15 +95,6 @@ const RedirectReport: React.FC = () => {
   // cards, chart, leaderboard, pivot table, export) reflects the same
   // filtered view - one filter pipeline, no risk of the chart and table
   // silently disagreeing.
-  //
-  // Every successful redirect action counts, including a domain redirected
-  // more than once in the same week (each run is a separate "lượt") - a
-  // deliberate choice after a real case (job #2866) where collapsing to
-  // "latest action per domain" made a job look like it only touched 4
-  // domains when it actually processed way more; some were just redirected
-  // again later by a different job. Counting every action avoids that kind
-  // of confusion, at the cost of the total no longer being "distinct
-  // domains touched" - it's "redirect actions performed".
   const filteredItems = useMemo(() => {
     const search = domainSearch.trim().toLowerCase();
     return items.filter(
@@ -111,23 +102,44 @@ const RedirectReport: React.FC = () => {
     );
   }, [items, picFilter, domainSearch]);
 
+  // 1 "lượt" per distinct (pic, week, domain, target_url) - collapses only
+  // an EXACT repeat (same domain re-pointed to the same target again,
+  // usually a redundant re-run/retry: confirmed on real data, 132 of 1958
+  // repeat cases in 8 weeks were exact repeats), while still counting a
+  // domain re-pointed to a genuinely DIFFERENT target as its own separate
+  // lượt (the dominant case - 1826 of those 1958 - and real distinct work,
+  // e.g. job #2866's domains later redirected elsewhere by other jobs).
+  // Keeps the latest action's timestamp/job_id as the representative row
+  // for each distinct pair, same convention as the earlier per-domain dedup.
+  const dedupedActions = useMemo(() => {
+    const map = new Map<string, API.RedirectWeeklyItem>();
+    for (const item of filteredItems) {
+      const key = `${item.pic}|${item.week_start}|${item.domain}|${item.target_url}`;
+      const existing = map.get(key);
+      if (!existing || item.redirected_at > existing.redirected_at) {
+        map.set(key, item);
+      }
+    }
+    return Array.from(map.values());
+  }, [filteredItems]);
+
   const weekStarts = useMemo(() => weekStartsBetween(range[0], range[1]), [range]);
   const currentWeekStart = useMemo(() => mondayOf(dayjs()).format('YYYY-MM-DD'), []);
 
   const filteredPics = useMemo(
-    () => Array.from(new Set(filteredItems.map((r) => r.pic || UNKNOWN_PIC))).sort(),
-    [filteredItems],
+    () => Array.from(new Set(dedupedActions.map((r) => r.pic || UNKNOWN_PIC))).sort(),
+    [dedupedActions],
   );
 
   const counts = useMemo(() => {
     const out: Record<string, Record<string, number>> = {};
-    for (const r of filteredItems) {
+    for (const r of dedupedActions) {
       const pic = r.pic || UNKNOWN_PIC;
       out[pic] = out[pic] || {};
       out[pic][r.week_start] = (out[pic][r.week_start] || 0) + 1;
     }
     return out;
-  }, [filteredItems]);
+  }, [dedupedActions]);
 
   const weekTotal = (ws: string) => filteredPics.reduce((sum, pic) => sum + (counts[pic]?.[ws] || 0), 0);
 
@@ -152,13 +164,14 @@ const RedirectReport: React.FC = () => {
     filteredPics,
   ]);
 
-  // Every redirect action for the selected cell (no dedup - includes a
-  // domain redirected more than once that week as separate rows), grouped
-  // so domains sharing the same target URL sit next to each other (biggest
-  // cluster first) instead of plain alphabetical order.
+  // Every distinct (domain, target_url) action for the selected cell -
+  // includes a domain re-pointed to a genuinely different target that week
+  // as a separate row, grouped so domains sharing the same target URL sit
+  // next to each other (biggest cluster first) instead of plain
+  // alphabetical order.
   const cellDetail = useMemo(() => {
     if (!detailCell) return [];
-    const rows = filteredItems.filter(
+    const rows = dedupedActions.filter(
       (r) => (r.pic || UNKNOWN_PIC) === detailCell.pic && r.week_start === detailCell.weekStart,
     );
     const byUrl = new Map<string, API.RedirectWeeklyItem[]>();
@@ -173,7 +186,7 @@ const RedirectReport: React.FC = () => {
     return Array.from(byUrl.entries())
       .sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))
       .flatMap(([, list]) => list);
-  }, [filteredItems, detailCell]);
+  }, [dedupedActions, detailCell]);
 
   // Number of redirect actions ("lượt") per domain within the cell - flags
   // a domain that was touched more than once that week, which is exactly
@@ -229,16 +242,16 @@ const RedirectReport: React.FC = () => {
     ]);
 
   const exportAll = () => {
-    if (!filteredItems.length) {
+    if (!dedupedActions.length) {
       message.warning('Không có dữ liệu để xuất');
       return;
     }
     exportToCsv(
       `redirect-301-theo-pic-${dayjs().format('YYYY-MM-DD')}.csv`,
       ['PIC', 'Tuần', 'Domain', 'Target URL', 'Thời điểm redirect', 'Job ID'],
-      exportRows(filteredItems),
+      exportRows(dedupedActions),
     );
-    message.success(`Đã xuất ${filteredItems.length} dòng`);
+    message.success(`Đã xuất ${dedupedActions.length} dòng`);
   };
 
   const exportCell = () => {
