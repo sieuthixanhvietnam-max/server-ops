@@ -32,6 +32,34 @@ const CLUSTER_PALETTE = [
   '#fff1f0',
 ];
 
+// A fixed accent per PIC (hashed from the name, stable across reloads) - a
+// small colored dot in the pivot table's PIC column so a row is recognizable
+// at a glance while scanning many weeks, without needing a full legend.
+const PIC_ACCENT_PALETTE = [
+  '#1677ff',
+  '#52c41a',
+  '#fa8c16',
+  '#eb2f96',
+  '#722ed1',
+  '#13c2c2',
+  '#faad14',
+  '#f5222d',
+];
+
+function picAccent(pic: string): string {
+  let hash = 0;
+  for (let i = 0; i < pic.length; i += 1) hash = (hash * 31 + pic.charCodeAt(i)) >>> 0;
+  return PIC_ACCENT_PALETTE[hash % PIC_ACCENT_PALETTE.length];
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const m = hex.replace('#', '');
+  const r = parseInt(m.substring(0, 2), 16);
+  const g = parseInt(m.substring(2, 4), 16);
+  const b = parseInt(m.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
@@ -141,6 +169,15 @@ const RedirectReport: React.FC = () => {
   }, [dedupedActions]);
 
   const weekTotal = (ws: string) => filteredPics.reduce((sum, pic) => sum + (counts[pic]?.[ws] || 0), 0);
+  const picTotal = (pic: string) => weekStarts.reduce((sum, ws) => sum + (counts[pic]?.[ws] || 0), 0);
+
+  // Scales the pivot table's cell shading - based on individual PIC/week
+  // cells only (not the "Tổng" row/column), so one very busy week doesn't
+  // wash out the shading for every other, smaller cell.
+  const maxCellCount = useMemo(
+    () => Math.max(1, ...filteredPics.flatMap((pic) => weekStarts.map((ws) => counts[pic]?.[ws] || 0))),
+    [filteredPics, weekStarts, counts],
+  );
 
   const lastWeek = weekStarts[weekStarts.length - 1];
   const prevWeek = weekStarts[weekStarts.length - 2];
@@ -268,8 +305,29 @@ const RedirectReport: React.FC = () => {
       title: 'PIC',
       dataIndex: 'pic',
       fixed: 'left' as const,
-      width: 160,
-      render: (v: string) => <Text strong>{v}</Text>,
+      width: 170,
+      render: (v: string, row: any) => {
+        if (row.key === '__total__') return <Text strong>{v}</Text>;
+        const active = picFilter === v;
+        return (
+          <Space
+            size={8}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setPicFilter(active ? undefined : v)}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: picAccent(v),
+                flexShrink: 0,
+              }}
+            />
+            <Text strong={active}>{v}</Text>
+          </Space>
+        );
+      },
     },
     ...weekStarts.map((ws) => ({
       title:
@@ -284,30 +342,57 @@ const RedirectReport: React.FC = () => {
       dataIndex: ws,
       align: 'center' as const,
       width: 140,
-      onHeaderCell: () => (ws === currentWeekStart ? { style: { background: 'rgba(22,119,255,0.06)' } } : {}),
-      onCell: () => (ws === currentWeekStart ? { style: { background: 'rgba(22,119,255,0.04)' } } : {}),
+      onHeaderCell: () => (ws === currentWeekStart ? { style: { background: token.colorPrimaryBg } } : {}),
+      onCell: (row: any) => {
+        const count = row[ws] || 0;
+        const style: React.CSSProperties = { cursor: count ? 'pointer' : 'default' };
+        if (row.key !== '__total__' && count > 0) {
+          style.background = hexToRgba(token.colorPrimary, (count / maxCellCount) * 0.32 + 0.04);
+        } else if (ws === currentWeekStart) {
+          style.background = token.colorPrimaryBg;
+        }
+        return {
+          style,
+          onClick: () => count && setDetailCell({ pic: row.pic, weekStart: ws }),
+        };
+      },
       render: (_: unknown, row: any) => {
         const count = row[ws] || 0;
-        if (!count) return <Text type="secondary">0</Text>;
-        return (
-          <Button type="link" onClick={() => setDetailCell({ pic: row.pic, weekStart: ws })}>
-            {count}
-          </Button>
-        );
+        if (!count) return <Text type="secondary">–</Text>;
+        return <Text strong={row.key === '__total__'}>{count.toLocaleString('vi-VN')}</Text>;
       },
     })),
+    {
+      title: 'Tổng cả kỳ',
+      dataIndex: '__periodTotal__',
+      fixed: 'right' as const,
+      align: 'right' as const,
+      width: 110,
+      render: (_: unknown, row: any) => (
+        <Text strong style={{ color: token.colorPrimary }}>
+          {(row.__periodTotal__ as number).toLocaleString('vi-VN')}
+        </Text>
+      ),
+    },
   ];
 
   const dataSource = useMemo(() => {
-    const rows: Record<string, unknown>[] = filteredPics.map((pic) => ({ key: pic, pic, ...counts[pic] }));
+    const rows: Record<string, unknown>[] = filteredPics.map((pic) => ({
+      key: pic,
+      pic,
+      ...counts[pic],
+      __periodTotal__: picTotal(pic),
+    }));
     if (filteredPics.length) {
+      const weekCounts = weekStarts.reduce<Record<string, number>>((acc, ws) => {
+        acc[ws] = weekTotal(ws);
+        return acc;
+      }, {});
       rows.push({
         key: '__total__',
         pic: 'Tổng',
-        ...weekStarts.reduce<Record<string, number>>((acc, ws) => {
-          acc[ws] = weekTotal(ws);
-          return acc;
-        }, {}),
+        ...weekCounts,
+        __periodTotal__: Object.values(weekCounts).reduce((a, b) => a + b, 0),
       });
     }
     return rows;
@@ -465,7 +550,10 @@ const RedirectReport: React.FC = () => {
           dataSource={dataSource}
           pagination={false}
           scroll={{ x: 'max-content' }}
-          rowClassName={(row: any) => (row.key === '__total__' ? 'redirect-report-total-row' : '')}
+          sticky
+          onRow={(row: any) =>
+            row.key === '__total__' ? { style: { background: token.colorFillAlter } } : {}
+          }
         />
       </Card>
 
