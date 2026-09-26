@@ -4,7 +4,7 @@ import os
 import secrets
 from typing import Literal
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -1727,9 +1727,14 @@ async def trigger_migrate_wpsite(
     return {"job_id": job.id}
 
 
+VN_TZ = timezone(timedelta(hours=7))  # Asia/Ho_Chi_Minh, no DST - fixed offset is exact
+
+
 @router.get("/reports/redirect-weekly")
 def redirect_weekly_report(
     weeks: int = Query(8, ge=1, le=52),
+    date_from: datetime | None = Query(None, description="Overrides `weeks` if given"),
+    date_to: datetime | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Domain 301 count per PIC per week, for the 'Báo cáo Redirect 301'
@@ -1739,14 +1744,23 @@ def redirect_weekly_report(
     Returns one row per (pic, week, domain) actually applied (status
     created/updated/unchanged - excludes dry-run and failed entries), so the
     frontend can both aggregate counts and drill into per-cell detail/export
-    from this single response without a second round-trip."""
-    since = datetime.utcnow() - timedelta(weeks=weeks)
+    from this single response without a second round-trip.
+
+    Week buckets are Monday-Sunday in Vietnam local time (UTC+7), not raw
+    UTC - Job.created_at is stored/read as UTC, so a job that ran, say,
+    2026-09-21 20:00 UTC (Monday, 03:00 the next calendar day in Vietnam)
+    would otherwise land in the wrong week for a VN-based team reading this
+    report. Confirmed as a real, user-reported discrepancy, not a
+    theoretical one."""
+    since = date_from or (datetime.utcnow() - timedelta(weeks=weeks))
+    until = date_to or datetime.utcnow()
     rows = db.execute(
         select(Job.id, Job.created_by, Job.created_at, Job.result_json)
         .where(
             Job.job_type == "cf_redirect",
             Job.status == "success",
             Job.created_at >= since,
+            Job.created_at <= until,
         )
         .order_by(Job.created_at)
     ).all()
@@ -1757,7 +1771,8 @@ def redirect_weekly_report(
             results = json.loads(result_json or "[]")
         except (TypeError, ValueError):
             continue
-        week_start = (created_at - timedelta(days=created_at.weekday())).strftime("%Y-%m-%d")
+        created_at_vn = created_at.astimezone(VN_TZ)
+        week_start = (created_at_vn - timedelta(days=created_at_vn.weekday())).strftime("%Y-%m-%d")
         for r in results:
             if not isinstance(r, dict) or r.get("status") not in ("created", "updated", "unchanged"):
                 continue

@@ -223,7 +223,7 @@ export async function listJobs(
 
 /** GET /api/jobs/reports/redirect-weekly */
 export async function getRedirectWeeklyReport(
-  params?: { weeks?: number },
+  params?: { weeks?: number; date_from?: string; date_to?: string },
   options?: { [key: string]: any },
 ) {
   return request<{ data: API.RedirectWeeklyItem[]; success: boolean }>(
