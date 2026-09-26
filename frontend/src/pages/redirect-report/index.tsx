@@ -1,6 +1,6 @@
 import { getRedirectWeeklyReport } from '@/services/serverOps/api';
 import { exportToCsv } from '@/utils/exportCsv';
-import { DownloadOutlined } from '@ant-design/icons';
+import { CloseOutlined, DownloadOutlined } from '@ant-design/icons';
 import { Column } from '@ant-design/plots';
 import { PageContainer } from '@ant-design/pro-components';
 import {
@@ -10,7 +10,6 @@ import {
   DatePicker,
   Empty,
   Input,
-  Modal,
   Select,
   Space,
   Statistic,
@@ -19,7 +18,21 @@ import {
   Typography,
 } from 'antd';
 import dayjs from 'dayjs';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+
+// Light, distinct backgrounds for rows that share a target URL with at
+// least one other domain in the same cell - readable in both themes since
+// only the background changes, never the text color.
+const CLUSTER_PALETTE = [
+  '#e6f4ff',
+  '#f6ffed',
+  '#fff7e6',
+  '#fff0f6',
+  '#f9f0ff',
+  '#e6fffb',
+  '#fcffe6',
+  '#fff1f0',
+];
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -144,12 +157,51 @@ const RedirectReport: React.FC = () => {
     filteredPics,
   ]);
 
+  // Rows for the selected cell, grouped so domains sharing the same target
+  // URL sit next to each other (biggest cluster first) instead of plain
+  // alphabetical order - the whole point of grouping is to make clusters
+  // visually contiguous, not just colored.
   const cellDetail = useMemo(() => {
     if (!detailCell) return [];
-    return deduped
-      .filter((r) => (r.pic || UNKNOWN_PIC) === detailCell.pic && r.week_start === detailCell.weekStart)
-      .sort((a, b) => (a.domain < b.domain ? -1 : 1));
+    const rows = deduped.filter(
+      (r) => (r.pic || UNKNOWN_PIC) === detailCell.pic && r.week_start === detailCell.weekStart,
+    );
+    const byUrl = new Map<string, API.RedirectWeeklyItem[]>();
+    for (const r of rows) {
+      const list = byUrl.get(r.target_url) || [];
+      list.push(r);
+      byUrl.set(r.target_url, list);
+    }
+    for (const list of byUrl.values()) list.sort((a, b) => (a.domain < b.domain ? -1 : 1));
+    return Array.from(byUrl.entries())
+      .sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))
+      .flatMap(([, list]) => list);
   }, [deduped, detailCell]);
+
+  const urlCounts = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const r of cellDetail) out.set(r.target_url, (out.get(r.target_url) || 0) + 1);
+    return out;
+  }, [cellDetail]);
+
+  // Only target URLs shared by 2+ domains get a color - a domain with a
+  // unique target isn't really a "cluster", coloring it would just be noise.
+  const clusterColors = useMemo(() => {
+    const colors = new Map<string, string>();
+    let i = 0;
+    for (const [url, count] of urlCounts) {
+      if (count > 1) {
+        colors.set(url, CLUSTER_PALETTE[i % CLUSTER_PALETTE.length]);
+        i += 1;
+      }
+    }
+    return colors;
+  }, [urlCounts]);
+
+  const detailRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (detailCell) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [detailCell]);
 
   const exportRows = (rows: API.RedirectWeeklyItem[]) =>
     rows.map((r) => [
@@ -317,7 +369,7 @@ const RedirectReport: React.FC = () => {
         />
       </Card>
 
-      <Card title="Chi tiết theo PIC × tuần">
+      <Card title="Chi tiết theo PIC × tuần" style={{ marginBottom: detailCell ? 16 : 0 }}>
         <Table
           rowKey="key"
           loading={loading}
@@ -329,35 +381,54 @@ const RedirectReport: React.FC = () => {
         />
       </Card>
 
-      <Modal
-        title={detailCell ? `${detailCell.pic} — ${weekLabel(detailCell.weekStart)}` : ''}
-        open={!!detailCell}
-        onCancel={() => setDetailCell(null)}
-        footer={
-          <Button icon={<DownloadOutlined />} onClick={exportCell}>
-            Xuất CSV
-          </Button>
-        }
-        width={720}
-        destroyOnHidden
-      >
-        <Table
-          rowKey={(r) => `${r.domain}-${r.job_id}`}
-          dataSource={cellDetail}
-          pagination={false}
-          size="small"
-          columns={[
-            { title: 'Domain', dataIndex: 'domain' },
-            { title: 'Target URL', dataIndex: 'target_url' },
-            {
-              title: 'Thời điểm',
-              dataIndex: 'redirected_at',
-              render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
-            },
-            { title: 'Job', dataIndex: 'job_id', render: (v: number) => `#${v}` },
-          ]}
-        />
-      </Modal>
+      {detailCell && (
+        <div ref={detailRef}>
+          <Card
+            title={`${detailCell.pic} — ${weekLabel(detailCell.weekStart)} (${cellDetail.length} domain)`}
+            extra={
+              <Space>
+                <Button icon={<DownloadOutlined />} onClick={exportCell}>
+                  Xuất CSV
+                </Button>
+                <Button icon={<CloseOutlined />} onClick={() => setDetailCell(null)} />
+              </Space>
+            }
+          >
+            <Table
+              rowKey={(r) => `${r.domain}-${r.job_id}`}
+              dataSource={cellDetail}
+              pagination={false}
+              size="small"
+              onRow={(record) => {
+                const color = clusterColors.get(record.target_url);
+                return color ? { style: { background: color } } : {};
+              }}
+              columns={[
+                { title: 'Domain', dataIndex: 'domain' },
+                {
+                  title: 'Target URL',
+                  dataIndex: 'target_url',
+                  render: (v: string) => {
+                    const count = urlCounts.get(v) || 0;
+                    return (
+                      <Space size={6}>
+                        {v}
+                        {count > 1 && <Tag color="default">{count} domain</Tag>}
+                      </Space>
+                    );
+                  },
+                },
+                {
+                  title: 'Thời điểm',
+                  dataIndex: 'redirected_at',
+                  render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
+                },
+                { title: 'Job', dataIndex: 'job_id', render: (v: number) => `#${v}` },
+              ]}
+            />
+          </Card>
+        </div>
+      )}
     </PageContainer>
   );
 };
