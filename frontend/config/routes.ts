@@ -102,6 +102,12 @@ export default [
         path: '/monitor/access-control',
         component: './access-control',
       },
+      {
+        name: 'redirect-report',
+        icon: 'barChart',
+        path: '/monitor/redirect-report',
+        component: './redirect-report',
+      },
     ],
   },
   {

@@ -221,6 +221,21 @@ export async function listJobs(
   });
 }
 
+/** GET /api/jobs/reports/redirect-weekly */
+export async function getRedirectWeeklyReport(
+  params?: { weeks?: number },
+  options?: { [key: string]: any },
+) {
+  return request<{ data: API.RedirectWeeklyItem[]; success: boolean }>(
+    '/api/jobs/reports/redirect-weekly',
+    {
+      method: 'GET',
+      params,
+      ...(options || {}),
+    },
+  );
+}
+
 /** GET /api/jobs/{id} */
 export async function getJob(jobId: number, options?: { [key: string]: any }) {
   return request<API.JobDetail>(`/api/jobs/${jobId}`, {

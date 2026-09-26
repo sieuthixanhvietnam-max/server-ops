@@ -13,6 +13,7 @@ export default {
   'menu.monitor.job-history': 'Lịch sử Job',
   'menu.monitor.domain-changes': 'Thay đổi Domain',
   'menu.monitor.access-control': 'Kiểm soát truy cập',
+  'menu.monitor.redirect-report': 'Báo cáo Redirect 301',
   'menu.server-task': 'Tác vụ Server',
   'menu.server-task.clone-wpsite': 'Clone WordPress',
   'menu.server-task.migrate-wpsite': 'Di chuyển WordPress',

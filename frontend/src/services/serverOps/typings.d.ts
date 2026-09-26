@@ -98,6 +98,15 @@ declare namespace API {
     success: boolean;
   };
 
+  type RedirectWeeklyItem = {
+    pic: string;
+    domain: string;
+    target_url: string;
+    redirected_at: string;
+    week_start: string;
+    job_id: number;
+  };
+
   type JobStatus = 'pending' | 'running' | 'success' | 'failed';
 
   type JobDetail = {

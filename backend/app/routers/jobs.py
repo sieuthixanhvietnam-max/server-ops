@@ -4,7 +4,7 @@ import os
 import secrets
 from typing import Literal
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -1725,6 +1725,56 @@ async def trigger_migrate_wpsite(
 
     launch_job(job.id, worker)
     return {"job_id": job.id}
+
+
+@router.get("/reports/redirect-weekly")
+def redirect_weekly_report(
+    weeks: int = Query(8, ge=1, le=52),
+    db: Session = Depends(get_db),
+):
+    """Domain 301 count per PIC per week, for the 'Báo cáo Redirect 301'
+    page. PIC here is deliberately Job.created_by (whoever actually ran the
+    cf_redirect job) - a conscious choice discussed with the user, NOT the
+    server-ownership PIC concept in pic_service.py used by Domain Changes.
+    Returns one row per (pic, week, domain) actually applied (status
+    created/updated/unchanged - excludes dry-run and failed entries), so the
+    frontend can both aggregate counts and drill into per-cell detail/export
+    from this single response without a second round-trip."""
+    since = datetime.utcnow() - timedelta(weeks=weeks)
+    rows = db.execute(
+        select(Job.id, Job.created_by, Job.created_at, Job.result_json)
+        .where(
+            Job.job_type == "cf_redirect",
+            Job.status == "success",
+            Job.created_at >= since,
+        )
+        .order_by(Job.created_at)
+    ).all()
+
+    detail: list[dict] = []
+    for job_id, created_by, created_at, result_json in rows:
+        try:
+            results = json.loads(result_json or "[]")
+        except (TypeError, ValueError):
+            continue
+        week_start = (created_at - timedelta(days=created_at.weekday())).strftime("%Y-%m-%d")
+        for r in results:
+            if not isinstance(r, dict) or r.get("status") not in ("created", "updated", "unchanged"):
+                continue
+            domain = r.get("domain")
+            if not domain:
+                continue
+            detail.append(
+                {
+                    "pic": created_by,
+                    "domain": domain,
+                    "target_url": r.get("target_url", ""),
+                    "redirected_at": created_at.isoformat(),
+                    "week_start": week_start,
+                    "job_id": job_id,
+                }
+            )
+    return {"data": detail, "success": True}
 
 
 @router.get("/{job_id}")
