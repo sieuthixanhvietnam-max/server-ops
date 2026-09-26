@@ -1751,7 +1751,13 @@ def redirect_weekly_report(
     2026-09-21 20:00 UTC (Monday, 03:00 the next calendar day in Vietnam)
     would otherwise land in the wrong week for a VN-based team reading this
     report. Confirmed as a real, user-reported discrepancy, not a
-    theoretical one."""
+    theoretical one.
+
+    Excludes settings.admin_username - the break-glass admin account isn't
+    a real PIC, and its historical redirect runs (bulk setup/test work, not
+    routine per-PIC attribution) would otherwise skew the per-PIC counts
+    and leaderboard. This only affects this report's aggregation - the
+    underlying Job rows are untouched, still visible in Job History."""
     since = date_from or (datetime.utcnow() - timedelta(weeks=weeks))
     until = date_to or datetime.utcnow()
     rows = db.execute(
@@ -1761,6 +1767,7 @@ def redirect_weekly_report(
             Job.status == "success",
             Job.created_at >= since,
             Job.created_at <= until,
+            Job.created_by != settings.admin_username,
         )
         .order_by(Job.created_at)
     ).all()
