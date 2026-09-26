@@ -1,22 +1,20 @@
+import KpiCard from '@/components/KpiCard';
 import { getRedirectWeeklyReport } from '@/services/serverOps/api';
 import { exportToCsv } from '@/utils/exportCsv';
-import { CloseOutlined, DownloadOutlined } from '@ant-design/icons';
+import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  BarChartOutlined,
+  CloseOutlined,
+  DownloadOutlined,
+  SwapOutlined,
+  TableOutlined,
+  TeamOutlined,
+  TrophyOutlined,
+} from '@ant-design/icons';
 import { Column } from '@ant-design/plots';
 import { PageContainer } from '@ant-design/pro-components';
-import {
-  App,
-  Button,
-  Card,
-  DatePicker,
-  Empty,
-  Input,
-  Select,
-  Space,
-  Statistic,
-  Table,
-  Tag,
-  Typography,
-} from 'antd';
+import { App, Button, Card, Col, DatePicker, Empty, Input, Row, Select, Space, Table, Tag, theme, Typography } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -70,6 +68,7 @@ type Range = [dayjs.Dayjs, dayjs.Dayjs];
 
 const RedirectReport: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [range, setRange] = useState<Range>(() => [mondayOf(dayjs()).subtract(7, 'week'), dayjs()]);
   const [picFilter, setPicFilter] = useState<string>();
   const [domainSearch, setDomainSearch] = useState('');
@@ -315,89 +314,150 @@ const RedirectReport: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredPics, counts, weekStarts]);
 
+  const trendUp = delta > 0;
+  const trendDown = delta < 0;
+
   return (
     <PageContainer title="Báo cáo Redirect 301 theo PIC">
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: 16,
-          marginBottom: 16,
-        }}
-      >
-        <Card size="small">
-          <Statistic title="Tuần gần nhất" value={lastWeekTotal} suffix="lượt" />
-        </Card>
-        <Card size="small">
-          <Statistic
-            title="So với tuần trước"
-            value={deltaPct === null ? '—' : `${delta >= 0 ? '+' : ''}${deltaPct}%`}
-            valueStyle={{ color: delta > 0 ? '#3f8600' : delta < 0 ? '#cf1322' : undefined }}
-            prefix={delta > 0 ? '▲' : delta < 0 ? '▼' : undefined}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }} align="stretch">
+        <Col xs={12} md={6}>
+          <KpiCard
+            icon={<SwapOutlined />}
+            label={`Lượt redirect · ${lastWeek ? weekLabel(lastWeek) : 'tuần gần nhất'}`}
+            value={lastWeekTotal.toLocaleString('vi-VN')}
+            color={token.colorPrimary}
+            bg={token.colorPrimaryBg}
           />
-        </Card>
-        <Card size="small">
-          <Statistic title="PIC dẫn đầu tuần này" value={leaderboard[0] ? `${leaderboard[0].pic} (${leaderboard[0].count})` : '—'} />
-        </Card>
-      </div>
+        </Col>
+        <Col xs={12} md={6}>
+          <KpiCard
+            icon={trendDown ? <ArrowDownOutlined /> : <ArrowUpOutlined />}
+            label="So với tuần trước"
+            value={deltaPct === null ? '—' : `${delta >= 0 ? '+' : ''}${deltaPct}%`}
+            color={trendUp ? token.colorSuccess : trendDown ? token.colorError : token.colorTextTertiary}
+            bg={trendUp ? token.colorSuccessBg : trendDown ? token.colorErrorBg : token.colorFillTertiary}
+            caption={prevWeek ? `Tuần trước: ${prevWeekTotal.toLocaleString('vi-VN')} lượt` : undefined}
+          />
+        </Col>
+        <Col xs={12} md={6}>
+          <KpiCard
+            icon={<TrophyOutlined />}
+            label="PIC dẫn đầu tuần này"
+            value={leaderboard[0]?.pic || '—'}
+            color={token.colorWarning}
+            bg={token.colorWarningBg}
+            caption={leaderboard[0] ? `${leaderboard[0].count.toLocaleString('vi-VN')} lượt` : undefined}
+          />
+        </Col>
+        <Col xs={12} md={6}>
+          <KpiCard
+            icon={<TeamOutlined />}
+            label="PIC hoạt động tuần này"
+            value={leaderboard.length}
+            color={token.colorInfo}
+            bg={token.colorInfoBg}
+          />
+        </Col>
+      </Row>
+
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Space wrap size={12}>
+          <RangePicker
+            value={range}
+            allowClear={false}
+            onChange={(v) => {
+              if (v && v[0] && v[1]) setRange([v[0], v[1]]);
+            }}
+          />
+          <Select
+            allowClear
+            placeholder="Lọc PIC"
+            style={{ width: 140 }}
+            options={pics.map((p) => ({ label: p, value: p }))}
+            value={picFilter}
+            onChange={setPicFilter}
+          />
+          <Input
+            allowClear
+            placeholder="Tìm domain"
+            style={{ width: 200 }}
+            value={domainSearch}
+            onChange={(e) => setDomainSearch(e.target.value)}
+          />
+          <Button icon={<DownloadOutlined />} onClick={exportAll}>
+            Xuất toàn bộ
+          </Button>
+        </Space>
+      </Card>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }} align="stretch">
+        <Col xs={24} xl={16}>
+          <Card
+            title={
+              <Space size={8}>
+                <BarChartOutlined /> Xu hướng theo tuần
+              </Space>
+            }
+            style={{ height: '100%' }}
+          >
+            {chartData.some((d) => d.value > 0) ? (
+              <Column
+                data={chartData}
+                xField="label"
+                yField="value"
+                height={280}
+                color={token.colorPrimary}
+                axis={{ x: { labelAutoRotate: true } }}
+              />
+            ) : (
+              <Empty description="Không có dữ liệu trong khoảng thời gian này" />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} xl={8}>
+          <Card
+            title={
+              <Space size={8}>
+                <TrophyOutlined /> Xếp hạng PIC - tuần gần nhất
+              </Space>
+            }
+            style={{ height: '100%' }}
+          >
+            <Table
+              rowKey="pic"
+              size="small"
+              loading={loading}
+              dataSource={leaderboard}
+              pagination={false}
+              locale={{ emptyText: 'Chưa có dữ liệu' }}
+              columns={[
+                { title: '#', width: 40, render: (_: unknown, __: unknown, i: number) => i + 1 },
+                { title: 'PIC', dataIndex: 'pic' },
+                {
+                  title: 'Số lượt',
+                  dataIndex: 'count',
+                  align: 'right' as const,
+                  sorter: (a: any, b: any) => a.count - b.count,
+                  render: (v: number, _r: unknown, i: number) => (
+                    <Text strong={i === 0} style={i === 0 ? { color: token.colorWarning } : undefined}>
+                      {v.toLocaleString('vi-VN')}
+                    </Text>
+                  ),
+                },
+              ]}
+            />
+          </Card>
+        </Col>
+      </Row>
 
       <Card
-        title="Xu hướng theo tuần"
-        extra={
-          <Space wrap>
-            <RangePicker
-              value={range}
-              allowClear={false}
-              onChange={(v) => {
-                if (v && v[0] && v[1]) setRange([v[0], v[1]]);
-              }}
-            />
-            <Select
-              allowClear
-              placeholder="Lọc PIC"
-              style={{ width: 140 }}
-              options={pics.map((p) => ({ label: p, value: p }))}
-              value={picFilter}
-              onChange={setPicFilter}
-            />
-            <Input
-              allowClear
-              placeholder="Tìm domain"
-              style={{ width: 200 }}
-              value={domainSearch}
-              onChange={(e) => setDomainSearch(e.target.value)}
-            />
-            <Button icon={<DownloadOutlined />} onClick={exportAll}>
-              Xuất toàn bộ
-            </Button>
+        title={
+          <Space size={8}>
+            <TableOutlined /> Chi tiết theo PIC × tuần
           </Space>
         }
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: detailCell ? 16 : 0 }}
       >
-        {chartData.some((d) => d.value > 0) ? (
-          <Column data={chartData} xField="label" yField="value" height={280} axis={{ x: { labelAutoRotate: true } }} />
-        ) : (
-          <Empty description="Không có dữ liệu trong khoảng thời gian này" />
-        )}
-      </Card>
-
-      <Card title="Xếp hạng PIC - tuần gần nhất" style={{ marginBottom: 16 }}>
-        <Table
-          rowKey="pic"
-          size="small"
-          loading={loading}
-          dataSource={leaderboard}
-          pagination={false}
-          locale={{ emptyText: 'Chưa có dữ liệu' }}
-          columns={[
-            { title: '#', render: (_: unknown, __: unknown, i: number) => i + 1, width: 50 },
-            { title: 'PIC', dataIndex: 'pic' },
-            { title: 'Số lượt', dataIndex: 'count', sorter: (a: any, b: any) => a.count - b.count },
-          ]}
-        />
-      </Card>
-
-      <Card title="Chi tiết theo PIC × tuần" style={{ marginBottom: detailCell ? 16 : 0 }}>
         <Table
           rowKey="key"
           loading={loading}
@@ -423,7 +483,7 @@ const RedirectReport: React.FC = () => {
             }
           >
             <Table
-              rowKey={(r) => `${r.domain}-${r.job_id}`}
+              rowKey={(r) => `${r.domain}-${r.job_id}-${r.target_url}`}
               dataSource={cellDetail}
               pagination={false}
               size="small"
