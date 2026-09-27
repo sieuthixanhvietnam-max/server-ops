@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -438,7 +438,10 @@ class ProviderCost(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     account_label: Mapped[str] = mapped_column(String, index=True)
     month: Mapped[str] = mapped_column(String, index=True)  # YYYY-MM
-    amount_vnd: Mapped[int] = mapped_column(BigInteger, default=0)
+    # NUMERIC, not an integer type - real entries carry fractional VNĐ
+    # (e.g. a cost converted from a USD invoice, cents included), even
+    # though whole-đồng amounts are the common case.
+    amount_vnd: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
     note: Mapped[str] = mapped_column(String, default="")
     created_by: Mapped[str] = mapped_column(String, default="")
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime())

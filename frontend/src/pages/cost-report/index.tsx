@@ -57,7 +57,7 @@ function monthLabel(m: string): string {
 }
 
 function fmtVnd(n: number | undefined): string {
-  return n ? `${n.toLocaleString('vi-VN')} đ` : '—';
+  return n ? `${n.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} đ` : '—';
 }
 
 type EditTarget = { accountLabel: string; month: string } | null;
@@ -407,14 +407,14 @@ const CostReportBody: React.FC = () => {
             label="Số tiền (VNĐ)"
             rules={[{ required: true, message: 'Nhập số tiền' }]}
           >
-            <InputNumber style={{ width: '100%' }} min={0} step={100000} />
+            <InputNumber style={{ width: '100%' }} min={0} step={100000} precision={2} />
           </Form.Item>
           <Form.Item shouldUpdate noStyle>
             {() => {
               const v = form.getFieldValue('amount_vnd');
               return typeof v === 'number' && v > 0 ? (
                 <Text type="secondary" style={{ display: 'block', marginTop: -12, marginBottom: 12 }}>
-                  {v.toLocaleString('vi-VN')} đ
+                  {v.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} đ
                 </Text>
               ) : null;
             }}

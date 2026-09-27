@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/costs", tags=["costs"], dependencies=[Depends(re
 
 
 class UpsertCostBody(BaseModel):
-    amount_vnd: int
+    amount_vnd: float
     note: str = ""
 
 
@@ -54,7 +54,10 @@ def list_costs(
             {
                 "account_label": r.account_label,
                 "month": r.month,
-                "amount_vnd": r.amount_vnd,
+                # Numeric comes back as Decimal - not natively JSON-
+                # serializable, so cast explicitly rather than relying on
+                # jsonable_encoder's fallback.
+                "amount_vnd": float(r.amount_vnd),
                 "note": r.note,
                 "updated_at": r.updated_at.isoformat(),
                 "created_by": r.created_by,

@@ -46,6 +46,21 @@ def _add_column_if_missing(conn, table: str, column: str, coltype_sql: str) -> N
     conn.commit()
 
 
+def _widen_to_numeric_if_needed(conn, table: str, column: str, precision: int, scale: int) -> None:
+    """provider_costs.amount_vnd started as BIGINT (whole VNĐ assumed), then
+    real entries turned out to carry cents (e.g. converted from a USD
+    invoice) - BIGINT rejects any fractional part outright. SQLite has no
+    rigid column typing (an INTEGER-affinity column already stores a REAL
+    losslessly if the value doesn't fit as an integer), so this only matters
+    for Postgres. Re-running the same ALTER TYPE on an already-NUMERIC
+    column is a cheap no-op, so this doesn't need an existence guard like
+    _add_column_if_missing."""
+    if _IS_SQLITE:
+        return
+    conn.execute(text(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE NUMERIC({precision},{scale})"))
+    conn.commit()
+
+
 def ensure_schema_migrations() -> None:
     """Base.metadata.create_all only creates missing tables - it never alters
     an existing one when a model gains a new column. Ad-hoc ALTER TABLE ADD
@@ -59,3 +74,4 @@ def ensure_schema_migrations() -> None:
         _add_column_if_missing(conn, "servers", "last_health_checked_at", _TIMESTAMP_TYPE)
         _add_column_if_missing(conn, "changelog_entries", "change_type", "VARCHAR DEFAULT 'fix'")
         _add_column_if_missing(conn, "jobs", "fail_reason", "VARCHAR")
+        _widen_to_numeric_if_needed(conn, "provider_costs", "amount_vnd", 18, 2)
