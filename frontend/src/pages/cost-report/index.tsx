@@ -407,13 +407,17 @@ const CostReportBody: React.FC = () => {
             label="Số tiền (VNĐ)"
             rules={[{ required: true, message: 'Nhập số tiền' }]}
           >
-            <InputNumber
-              style={{ width: '100%' }}
-              min={0}
-              step={100000}
-              formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-              parser={(v) => Number(v?.replace(/,/g, '') || 0) as 0}
-            />
+            <InputNumber style={{ width: '100%' }} min={0} step={100000} />
+          </Form.Item>
+          <Form.Item shouldUpdate noStyle>
+            {() => {
+              const v = form.getFieldValue('amount_vnd');
+              return typeof v === 'number' && v > 0 ? (
+                <Text type="secondary" style={{ display: 'block', marginTop: -12, marginBottom: 12 }}>
+                  {v.toLocaleString('vi-VN')} đ
+                </Text>
+              ) : null;
+            }}
           </Form.Item>
           <Form.Item name="note" label="Ghi chú">
             <Input.TextArea rows={2} placeholder="Không bắt buộc" />
