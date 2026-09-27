@@ -236,6 +236,70 @@ export async function getRedirectWeeklyReport(
   );
 }
 
+/** GET /api/reports/infra-weekly */
+export async function getInfraWeeklyReport(
+  params?: { weeks?: number },
+  options?: { [key: string]: any },
+) {
+  return request<{ data: API.InfraWeeklyItem[]; success: boolean }>('/api/reports/infra-weekly', {
+    method: 'GET',
+    params,
+    ...(options || {}),
+  });
+}
+
+/** GET /api/costs/accounts */
+export async function getCostAccounts(options?: { [key: string]: any }) {
+  return request<{ data: string[] }>('/api/costs/accounts', {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/** GET /api/costs */
+export async function getCosts(
+  params?: { month_from?: string; month_to?: string },
+  options?: { [key: string]: any },
+) {
+  return request<{ data: API.ProviderCostItem[] }>('/api/costs', {
+    method: 'GET',
+    params,
+    ...(options || {}),
+  });
+}
+
+/** PUT /api/costs/{account_label}/{month} */
+export async function upsertCost(
+  accountLabel: string,
+  month: string,
+  body: { amount_vnd: number; note?: string },
+  options?: { [key: string]: any },
+) {
+  return request<{ success: boolean }>(
+    `/api/costs/${encodeURIComponent(accountLabel)}/${encodeURIComponent(month)}`,
+    {
+      method: 'PUT',
+      data: body,
+      ...(options || {}),
+    },
+  );
+}
+
+/** DELETE /api/costs/{account_label}/{month} */
+export async function deleteCost(
+  accountLabel: string,
+  month: string,
+  options?: { [key: string]: any },
+) {
+  return request<{ success: boolean }>(
+    `/api/costs/${encodeURIComponent(accountLabel)}/${encodeURIComponent(month)}`,
+    {
+      method: 'DELETE',
+      ...(options || {}),
+    },
+  );
+}
+
 /** GET /api/jobs/{id} */
 export async function getJob(jobId: number, options?: { [key: string]: any }) {
   return request<API.JobDetail>(`/api/jobs/${jobId}`, {

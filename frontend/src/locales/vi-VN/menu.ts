@@ -14,6 +14,8 @@ export default {
   'menu.monitor.domain-changes': 'Thay đổi Domain',
   'menu.monitor.access-control': 'Kiểm soát truy cập',
   'menu.monitor.redirect-report': 'Báo cáo Redirect 301',
+  'menu.monitor.infra-report': 'Báo cáo Hạ tầng',
+  'menu.monitor.cost-report': 'Báo cáo Chi phí',
   'menu.server-task': 'Tác vụ Server',
   'menu.server-task.clone-wpsite': 'Clone WordPress',
   'menu.server-task.migrate-wpsite': 'Di chuyển WordPress',

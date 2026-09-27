@@ -13,6 +13,7 @@ from app.cf_whitelist_service import seed_cf_whitelist_ips
 from app.config import settings
 from app.database import Base, SessionLocal, engine, ensure_schema_migrations
 from app.health_service import health_check_lock, persist_health_results
+from app.infra_snapshot_service import backfill_domain_history, capture_current_week
 from app.models import Server
 from app.ops import ssh_ops
 from app.pic_service import seed_known_server_pics, seed_pic_teams, seed_pics
@@ -24,6 +25,7 @@ from app.routers import (
     cf_whitelist,
     cf_zones,
     changelog,
+    costs,
     dashboard,
     domain_changes,
     domains,
@@ -31,6 +33,7 @@ from app.routers import (
     mu_plugins,
     pics,
     plugin_zips,
+    reports,
     servers,
     settings as settings_router,
     site_credentials,
@@ -110,6 +113,22 @@ async def _periodic_health_check_loop():
         await asyncio.sleep(interval_seconds)
 
 
+async def _periodic_infra_snapshot_loop():
+    # Keeps this week's ProviderWeeklySnapshot row fresh from live
+    # Server/Domain counts (see infra_snapshot_service.py) - past weeks are
+    # never touched again once their week ends. Already ran once directly
+    # in lifespan() before this loop starts, so it sleeps first like
+    # _periodic_sync_loop, not immediately like the health-check loop.
+    interval_seconds = settings.infra_snapshot_interval_minutes * 60
+    while True:
+        await asyncio.sleep(interval_seconds)
+        db = SessionLocal()
+        try:
+            capture_current_week(db)
+        finally:
+            db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -124,16 +143,23 @@ async def lifespan(app: FastAPI):
         seed_cf_whitelist_ips(db)
         seed_admin_user(db)
         await run_sync(db)
+        # Backfill (one-time, no-ops after the first successful run) must
+        # run before the first capture so it can still tell "has anything
+        # ever been captured" apart from "did today's capture just happen".
+        backfill_domain_history(db)
+        capture_current_week(db)
     finally:
         db.close()
 
     task = asyncio.create_task(_periodic_sync_loop())
     cf_task = asyncio.create_task(_periodic_cf_sync_loop())
     health_task = asyncio.create_task(_periodic_health_check_loop())
+    infra_snapshot_task = asyncio.create_task(_periodic_infra_snapshot_loop())
     yield
     task.cancel()
     cf_task.cancel()
     health_task.cancel()
+    infra_snapshot_task.cancel()
 
 
 app = FastAPI(title="Server Ops API", lifespan=lifespan)
@@ -189,6 +215,8 @@ app.include_router(changelog.router)
 app.include_router(backups.router)
 app.include_router(theme_zips.router)
 app.include_router(mu_plugins.router)
+app.include_router(reports.router)
+app.include_router(costs.router)
 
 
 @app.get("/api/health")

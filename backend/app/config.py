@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     sync_interval_minutes: int = 10
     cf_sync_interval_minutes: int = 60
     health_check_interval_minutes: int = 20
+    # How often the current week's ProviderWeeklySnapshot row gets
+    # refreshed from live Server/Domain counts - cheap (2 count() queries),
+    # doesn't need to be frequent.
+    infra_snapshot_interval_minutes: int = 60
     cors_origins: str = "http://localhost:8000"
 
     jwt_secret: str

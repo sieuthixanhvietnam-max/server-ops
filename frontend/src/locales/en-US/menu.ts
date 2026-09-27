@@ -14,6 +14,8 @@ export default {
   'menu.monitor.domain-changes': 'Domain Changes',
   'menu.monitor.access-control': 'Access Control',
   'menu.monitor.redirect-report': 'Redirect 301 Report',
+  'menu.monitor.infra-report': 'Infrastructure Report',
+  'menu.monitor.cost-report': 'Cost Report',
   'menu.server-task': 'Server Tasks',
   'menu.server-task.clone-wpsite': 'Clone WordPress',
   'menu.server-task.migrate-wpsite': 'Migrate WordPress',

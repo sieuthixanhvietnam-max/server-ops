@@ -108,6 +108,18 @@ export default [
         path: '/monitor/redirect-report',
         component: './redirect-report',
       },
+      {
+        name: 'infra-report',
+        icon: 'cloudServer',
+        path: '/monitor/infra-report',
+        component: './infra-report',
+      },
+      {
+        name: 'cost-report',
+        icon: 'dollar',
+        path: '/monitor/cost-report',
+        component: './cost-report',
+      },
     ],
   },
   {

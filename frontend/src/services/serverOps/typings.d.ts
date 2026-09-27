@@ -107,6 +107,23 @@ declare namespace API {
     job_id: number;
   };
 
+  type InfraWeeklyItem = {
+    provider: string;
+    week_start: string;
+    server_count: number | null;
+    domain_count: number | null;
+    domains_removed: number;
+  };
+
+  type ProviderCostItem = {
+    account_label: string;
+    month: string;
+    amount_vnd: number;
+    note: string;
+    updated_at: string;
+    created_by: string;
+  };
+
   type JobStatus = 'pending' | 'running' | 'success' | 'failed';
 
   type JobDetail = {

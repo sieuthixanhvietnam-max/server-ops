@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -391,3 +391,54 @@ class JobTarget(Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     note: Mapped[str] = mapped_column(String, default="")
+
+
+class ProviderWeeklySnapshot(Base):
+    """One row per (provider, week_start) - the server/domain count that
+    provider had, tagged to the Monday-start week it was observed in.
+    Server and Domain are both full-replace-on-sync tables with no history
+    of their own, so there is no way to ask "how many servers did GCP have
+    3 weeks ago" without something recording it going forward - this table
+    is that record (see infra_snapshot_service.py).
+
+    The CURRENT week's row is overwritten on every periodic capture tick
+    (reflects the latest live count all week long); a past week's row is
+    simply never touched again once its week ends, which freezes it at
+    whatever the last tick during that week saw - the same "last known
+    value wins" convention as Server.last_health_status.
+
+    domain_count for weeks before this table started being populated was
+    backfilled once from DomainChangeLog's added/removed events (walking
+    backward from the live count - see backfill_domain_history). server_count
+    has no equivalent history source anywhere in this app and is left NULL
+    for those backfilled weeks - there is no way to reconstruct it."""
+
+    __tablename__ = "provider_weekly_snapshots"
+    __table_args__ = (UniqueConstraint("provider", "week_start", name="uq_provider_week"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String, index=True)
+    week_start: Mapped[str] = mapped_column(String, index=True)  # YYYY-MM-DD, Monday
+    server_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    domain_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class ProviderCost(Base):
+    """One row per (account_label, month) - a manually entered monthly cost
+    in VNĐ. account_label is one of costs_service.ACCOUNT_LABELS, the org's
+    own billing-account groupings (e.g. "Alibaba" alone covers 2 separate
+    real accounts, Partner vs Sieuthixanh) - not a dimension any provider's
+    billing API knows about on its own, so this is entered by hand rather
+    than pulled automatically."""
+
+    __tablename__ = "provider_costs"
+    __table_args__ = (UniqueConstraint("account_label", "month", name="uq_provider_cost_month"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_label: Mapped[str] = mapped_column(String, index=True)
+    month: Mapped[str] = mapped_column(String, index=True)  # YYYY-MM
+    amount_vnd: Mapped[int] = mapped_column(BigInteger, default=0)
+    note: Mapped[str] = mapped_column(String, default="")
+    created_by: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
