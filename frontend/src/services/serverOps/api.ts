@@ -1115,11 +1115,12 @@ export async function triggerMuPluginInstall(
   domains: string[],
   mu_plugin_id: number,
   dry_run: boolean,
+  check_username?: string,
   options?: { [key: string]: any },
 ) {
   return request<{ job_id: number }>('/api/jobs/mu-plugin-install', {
     method: 'POST',
-    data: { domains, mu_plugin_id, dry_run },
+    data: { domains, mu_plugin_id, dry_run, check_username: check_username || undefined },
     ...(options || {}),
   });
 }

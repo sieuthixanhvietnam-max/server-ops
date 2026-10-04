@@ -141,6 +141,7 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
   }
 
   if (job.job_type === 'mu_plugin_install') {
+    const anyUserCheck = (job.result as API.MuPluginInstallResult[]).some((r) => r.target_user_exists !== null);
     return (
       <Table<API.MuPluginInstallResult>
         style={{ marginTop: 16 }}
@@ -151,6 +152,20 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
           { title: 'Domain', dataIndex: 'domain' },
           { title: 'Server IP', dataIndex: 'ip' },
           { title: 'Trạng thái', dataIndex: 'status', render: (v) => <StatusTag status={v} /> },
+          ...(anyUserCheck
+            ? [
+                {
+                  title: 'User tồn tại?',
+                  dataIndex: 'target_user_exists',
+                  render: (v: boolean | null) =>
+                    v === null ? (
+                      <span style={{ color: '#999' }}>-</span>
+                    ) : (
+                      <Tag color={v ? 'green' : 'default'}>{v ? 'Có' : 'Không'}</Tag>
+                    ),
+                },
+              ]
+            : []),
           { title: 'Ghi chú', dataIndex: 'note' },
         ]}
       />

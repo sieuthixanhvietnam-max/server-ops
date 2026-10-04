@@ -102,6 +102,7 @@ const PluginManager: React.FC = () => {
     'plugin-manager:selectedMuPluginId',
     undefined,
   );
+  const [muPluginCheckUsername, setMuPluginCheckUsername] = useState('');
   const [muPluginUploadOpen, setMuPluginUploadOpen] = useState(false);
   const [muPluginUploadLabel, setMuPluginUploadLabel] = useState('');
   const [muPluginUploadFileList, setMuPluginUploadFileList] = useState<UploadFile[]>([]);
@@ -353,7 +354,7 @@ const PluginManager: React.FC = () => {
     }
     setRunning(true);
     try {
-      const res = await triggerMuPluginInstall(selectedDomains, selectedMuPluginId, dryRun);
+      const res = await triggerMuPluginInstall(selectedDomains, selectedMuPluginId, dryRun, muPluginCheckUsername.trim());
       setJobId(res.job_id);
     } finally {
       setRunning(false);
@@ -699,6 +700,18 @@ const PluginManager: React.FC = () => {
                       },
                     ]}
                   />
+                  <div style={{ marginTop: 12 }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      Kiểm tra username (không bắt buộc) - nếu điền, kết quả sẽ cho biết domain nào thực sự có
+                      username này, hữu ích khi mu-plugin chỉ có tác dụng với 1 tài khoản cụ thể.
+                    </Typography.Text>
+                    <Input
+                      style={{ marginTop: 4, maxWidth: 280 }}
+                      placeholder="VD: adtoptop"
+                      value={muPluginCheckUsername}
+                      onChange={(e) => setMuPluginCheckUsername(e.target.value)}
+                    />
+                  </div>
                   <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
                     <Button loading={isBusy} onClick={() => runInstallMuPlugin(true)}>
                       Xem trước (dry-run)

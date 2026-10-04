@@ -515,6 +515,7 @@ declare namespace API {
     ip: string;
     status: 'OK' | 'FAIL' | 'ROLLBACK' | 'ROLLBACK_FAILED' | 'DRYRUN';
     note: string;
+    target_user_exists: boolean | null;
   };
 
   type PluginZipItem = {

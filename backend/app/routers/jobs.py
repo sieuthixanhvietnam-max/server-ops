@@ -271,6 +271,11 @@ class MuPluginInstallRequest(BaseModel):
     domains: list[str]
     mu_plugin_id: int
     dry_run: bool = True
+    # Optional WP username to check for existence on each domain while
+    # deploying - useful for a mu-plugin that only matters where a specific
+    # account exists, so the result can show which domains it actually
+    # applies to without a separate pass.
+    check_username: str | None = None
 
 
 def _resolve_domain_server(
@@ -1468,14 +1473,19 @@ async def trigger_mu_plugin_install(
 
     job = create_job(
         db, "mu_plugin_install",
-        {"domains": body.domains, "dry_run": body.dry_run, "filename": row.filename, "resolve_errors": errors},
+        {
+            "domains": body.domains, "dry_run": body.dry_run, "filename": row.filename,
+            "check_username": body.check_username, "resolve_errors": errors,
+        },
         username, get_client_ip(request),
     )
 
     async def worker(ctx):
         for e in errors:
             ctx.log(f"[skip] {e}")
-        return await asyncio.to_thread(wp_mu_plugin_ops.install_mu_plugin, entries, mu_plugin, ctx.log, body.dry_run)
+        return await asyncio.to_thread(
+            wp_mu_plugin_ops.install_mu_plugin, entries, mu_plugin, ctx.log, body.dry_run, body.check_username,
+        )
 
     launch_job(job.id, worker)
     return {"job_id": job.id}

@@ -19,11 +19,15 @@ from app.ops import ssh_ops
 # layer in front of it, so it can't be fooled the same way.
 
 # $1 = domain, $2 = remote .php file (already uploaded via ssh_ops.put_file),
-# $3 = target filename inside wp-content/mu-plugins/
+# $3 = target filename inside wp-content/mu-plugins/, $4 = optional WP
+# username to check for existence (e.g. a mu-plugin that only matters for
+# one named account - lets the caller tell which domains it actually
+# applies to without a separate pass)
 INSTALL_MU_PLUGIN_SCRIPT = """#!/bin/bash
 DOMAIN="$1"
 REMOTE_FILE="$2"
 TARGET_FILENAME="$3"
+CHECK_USERNAME="$4"
 if [[ ! -f "/etc/wptt/vhost/.$DOMAIN.conf" ]]; then
     echo "RESULT|FAIL|not_found|domain not found on server"
     rm -f "$REMOTE_FILE"
@@ -60,6 +64,14 @@ if ! bootstrap_ok; then
     echo "RESULT|FAIL|broken_before|site không bootstrap được TRƯỚC khi deploy - không liên quan lần này, kiểm tra site trước"
     rm -f "$REMOTE_FILE"
     exit 14
+fi
+
+if [[ -n "$CHECK_USERNAME" ]]; then
+    if wp user get "$CHECK_USERNAME" --field=ID --allow-root --path="$PATH_WP" >/dev/null 2>&1; then
+        echo "USERCHECK|yes"
+    else
+        echo "USERCHECK|no"
+    fi
 fi
 
 LINT_OUT=$("$PHP_BIN" -l "$REMOTE_FILE" 2>&1)
@@ -107,11 +119,19 @@ def _connect_or_fail(ip, profile, log, label):
     return user, key, None
 
 
-def install_mu_plugin(entries: list[dict], mu_plugin: dict, log, dry_run: bool = False) -> list[dict]:
+def install_mu_plugin(
+    entries: list[dict], mu_plugin: dict, log, dry_run: bool = False, check_username: str | None = None,
+) -> list[dict]:
     """entries: [{"domain", "ip", "profile"}], mu_plugin: {"label", "path",
     "filename"} - a single library entry (routers/mu_plugins.py) deployed to
     every domain. Sequential, same reasoning as install_plugin_zip/
-    install_theme_zip: installs commonly land on the same physical server."""
+    install_theme_zip: installs commonly land on the same physical server.
+
+    check_username: optional WP username to look up on each domain (e.g. for
+    a mu-plugin that only matters where a specific account exists) - result
+    carries it as target_user_exists (True/False), or None when not
+    requested or the check never ran (domain not found/not WP/site already
+    broken before the deploy even started)."""
     target_filename = os.path.basename(mu_plugin["filename"])
     log(f"{'[dry-run] Would deploy' if dry_run else 'Deploying'} mu-plugin \"{mu_plugin['label']}\" "
         f"({target_filename}) to {len(entries)} domain(s)")
@@ -123,32 +143,48 @@ def install_mu_plugin(entries: list[dict], mu_plugin: dict, log, dry_run: bool =
             profile = e["profile"]
 
             if dry_run:
-                results.append({"domain": domain, "ip": ip, "status": "DRYRUN", "note": "no changes made"})
+                results.append(
+                    {"domain": domain, "ip": ip, "status": "DRYRUN", "note": "no changes made", "target_user_exists": None}
+                )
                 continue
 
             user, key, err = _connect_or_fail(ip, profile, log, label)
             if not user:
-                results.append({"domain": domain, "ip": ip, "status": "FAIL", "note": err})
+                results.append({"domain": domain, "ip": ip, "status": "FAIL", "note": err, "target_user_exists": None})
                 continue
 
             remote_file = f"/tmp/muplugin_{domain}_{os.path.basename(mu_plugin['path'])}"
             uploaded, msg = ssh_ops.put_file(ip, user, key, mu_plugin["path"], remote_file)
             if not uploaded:
                 log(f"[fail] {label}: upload failed - {msg}")
-                results.append({"domain": domain, "ip": ip, "status": "FAIL", "note": f"upload failed ({msg})"})
+                results.append(
+                    {"domain": domain, "ip": ip, "status": "FAIL", "note": f"upload failed ({msg})", "target_user_exists": None}
+                )
                 continue
 
             rc, output = ssh_ops.run_remote(
                 ip, user, key, INSTALL_MU_PLUGIN_SCRIPT,
-                args=[domain, remote_file, target_filename], use_sudo=True, timeout=60,
+                args=[domain, remote_file, target_filename, check_username or ""], use_sudo=True, timeout=60,
             )
             for line in output.splitlines():
                 log(f"    {line}")
 
-            result_line = next((l for l in output.splitlines() if l.startswith("RESULT|")), None)
+            lines = output.splitlines()
+            user_check_line = next((l for l in lines if l.startswith("USERCHECK|")), None)
+            target_user_exists = (
+                {"USERCHECK|yes": True, "USERCHECK|no": False}.get(user_check_line) if user_check_line else None
+            )
+            if check_username and target_user_exists is not None:
+                log(f"    [info] user \"{check_username}\" "
+                    f"{'tồn tại' if target_user_exists else 'KHÔNG tồn tại'} trên {domain}")
+
+            result_line = next((l for l in lines if l.startswith("RESULT|")), None)
             if not result_line:
                 log(f"[fail] {label}: no result (exit {rc})")
-                results.append({"domain": domain, "ip": ip, "status": "FAIL", "note": f"no result (exit {rc})"})
+                results.append(
+                    {"domain": domain, "ip": ip, "status": "FAIL", "note": f"no result (exit {rc})",
+                     "target_user_exists": target_user_exists}
+                )
                 continue
 
             parts = result_line.split("|")
@@ -156,16 +192,24 @@ def install_mu_plugin(entries: list[dict], mu_plugin: dict, log, dry_run: bool =
 
             if status == "OK":
                 log(f"[ ok ] {label}: {target_filename} đã đặt vào mu-plugins/, site bootstrap OK")
-                results.append({"domain": domain, "ip": ip, "status": "OK", "note": ""})
+                results.append(
+                    {"domain": domain, "ip": ip, "status": "OK", "note": "", "target_user_exists": target_user_exists}
+                )
             elif status in ("ROLLBACK", "ROLLBACK_FAILED"):
                 note = parts[4] if len(parts) > 4 else ""
                 log(f"[{'ok' if status == 'ROLLBACK' else 'fail'}] {label}: {note}")
-                results.append({"domain": domain, "ip": ip, "status": status, "note": note})
+                results.append(
+                    {"domain": domain, "ip": ip, "status": status, "note": note, "target_user_exists": target_user_exists}
+                )
             else:
                 note = parts[3] if len(parts) > 3 else f"exit {rc}"
                 log(f"[fail] {label}: {note}")
-                results.append({"domain": domain, "ip": ip, "status": "FAIL", "note": note})
+                results.append(
+                    {"domain": domain, "ip": ip, "status": "FAIL", "note": note, "target_user_exists": target_user_exists}
+                )
         except Exception as exc:
             log(f"[fail] {label}: unexpected error - {exc}")
-            results.append({"domain": domain, "ip": ip, "status": "FAIL", "note": f"unexpected error: {exc}"})
+            results.append(
+                {"domain": domain, "ip": ip, "status": "FAIL", "note": f"unexpected error: {exc}", "target_user_exists": None}
+            )
     return results
