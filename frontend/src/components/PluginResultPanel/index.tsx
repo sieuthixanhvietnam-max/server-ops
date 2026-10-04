@@ -6,6 +6,7 @@ const STATUS_COLORS: Record<string, string> = {
   OK: 'green',
   PARTIAL: 'gold',
   ROLLBACK: 'red',
+  ROLLBACK_FAILED: 'red',
   SKIP: 'gold',
   FAIL: 'red',
   DRYRUN: 'blue',
@@ -76,7 +77,11 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
     );
   }
 
-  if (['plugin_deactivate', 'plugin_activate', 'plugin_install_wp', 'plugin_install_zip'].includes(job.job_type)) {
+  if (
+    ['plugin_deactivate', 'plugin_activate', 'plugin_install_wp', 'plugin_install_zip', 'theme_install_zip'].includes(
+      job.job_type,
+    )
+  ) {
     return (
       <Table<API.PluginToggleResult>
         style={{ marginTop: 16 }}
@@ -129,6 +134,23 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
           { title: 'Plugin', dataIndex: 'plugin_summary' },
           { title: 'WP Core', dataIndex: 'core_summary' },
           { title: 'Core version', dataIndex: 'core_version', render: (v) => v || '-' },
+          { title: 'Ghi chú', dataIndex: 'note' },
+        ]}
+      />
+    );
+  }
+
+  if (job.job_type === 'mu_plugin_install') {
+    return (
+      <Table<API.MuPluginInstallResult>
+        style={{ marginTop: 16 }}
+        rowKey="domain"
+        dataSource={job.result}
+        pagination={false}
+        columns={[
+          { title: 'Domain', dataIndex: 'domain' },
+          { title: 'Server IP', dataIndex: 'ip' },
+          { title: 'Trạng thái', dataIndex: 'status', render: (v) => <StatusTag status={v} /> },
           { title: 'Ghi chú', dataIndex: 'note' },
         ]}
       />

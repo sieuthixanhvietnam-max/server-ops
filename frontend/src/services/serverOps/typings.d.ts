@@ -510,6 +510,13 @@ declare namespace API {
     verify?: VerifyInfo;
   };
 
+  type MuPluginInstallResult = {
+    domain: string;
+    ip: string;
+    status: 'OK' | 'FAIL' | 'ROLLBACK' | 'ROLLBACK_FAILED' | 'DRYRUN';
+    note: string;
+  };
+
   type PluginZipItem = {
     id: number;
     label: string;
