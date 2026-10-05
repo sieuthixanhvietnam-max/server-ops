@@ -2,7 +2,6 @@ import CfAddResultPanel from '@/components/CfAddResultPanel';
 import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import VerifyBadge from '@/components/VerifyBadge';
-import DomainSelect from '@/components/DomainSelect';
 import JobLogPanel from '@/components/JobLogPanel';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
@@ -11,7 +10,7 @@ import {
   checkDomainsExistBatch,
   listCfAccountOptions,
   listDomains,
-  listServers,
+  listPics,
   suggestCfAccount,
   triggerCfAdd,
   triggerCreateWpsite,
@@ -79,9 +78,12 @@ const CreateWpsite: React.FC = () => {
   const { token } = theme.useToken();
   const [source, setSource] = usePersistedState('create-wpsite:source', '');
   const [sourceServers, setSourceServers] = useState<ServerOption[]>([]);
-  const [sourceLoading, setSourceLoading] = useState(false);
   const [destServer, setDestServer] = usePersistedState<string | undefined>('create-wpsite:destServer', undefined);
-  const [serverDomainsCount, setServerDomainsCount] = useState<Record<string, number>>({});
+
+  const [pics, setPics] = useState<API.PicItem[]>([]);
+  const [selectedPic, setSelectedPic] = usePersistedState<string | undefined>('create-wpsite:pic', undefined);
+  const [templateOptions, setTemplateOptions] = useState<API.DomainItem[]>([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
 
   const [domainsText, setDomainsText] = usePersistedState('create-wpsite:domainsText', '');
   const [rows, setRows] = usePersistedState<Row[]>('create-wpsite:rows', []);
@@ -103,10 +105,15 @@ const CreateWpsite: React.FC = () => {
 
   useEffect(() => {
     listCfAccountOptions().then((res) => setAccountOptions(res.data || []));
-    listServers({ pageSize: 500, current: 1 }).then((res) => {
-      setServerDomainsCount(Object.fromEntries((res.data || []).map((s) => [s.server_name, s.domains_count])));
-    });
+    listPics().then((res) => setPics(res.data || []));
   }, []);
+
+  useEffect(() => {
+    setTemplateLoading(true);
+    listDomains({ domain: 'wp-template.site', pic: selectedPic, pageSize: 100 })
+      .then((res) => setTemplateOptions(res.data || []))
+      .finally(() => setTemplateLoading(false));
+  }, [selectedPic]);
 
   useEffect(() => {
     if (cfJob?.status === 'success') handleCheck();
@@ -119,23 +126,11 @@ const CreateWpsite: React.FC = () => {
   const existingCount = rows.filter((r) => r.exists).length;
   const notCheckedCount = rows.filter((r) => r.hasZone === undefined).length;
 
-  const handleSourceChange = async (value: string[]) => {
-    const domain = value[0] || '';
+  const handleTemplateSelect = (domain: string) => {
+    const opt = templateOptions.find((d) => d.domain === domain);
     setSource(domain);
-    setDestServer(undefined);
-    setSourceServers([]);
-    if (!domain) return;
-    setSourceLoading(true);
-    try {
-      const res = await listDomains({ domain, pageSize: 50, current: 1 });
-      const servers = (res.data || [])
-        .filter((d) => d.domain === domain)
-        .map((d) => ({ server_name: d.server_name, server_ip: d.server_ip }));
-      setSourceServers(servers);
-      if (servers.length === 1) setDestServer(servers[0].server_name);
-    } finally {
-      setSourceLoading(false);
-    }
+    setDestServer(opt?.server_name);
+    setSourceServers(opt ? [{ server_name: opt.server_name, server_ip: opt.server_ip }] : []);
   };
 
   const addDomains = () => {
@@ -233,12 +228,13 @@ const CreateWpsite: React.FC = () => {
   const clearCache = () => {
     setSource('');
     setDestServer(undefined);
+    setSelectedPic(undefined);
     setDomainsText('');
     setRows([]);
     setCfAccountId(undefined);
     setJobId(undefined);
     setCfJobId(undefined);
-    ['source', 'destServer', 'domainsText', 'rows', 'cfAccountId', 'jobId', 'cfJobId'].forEach((k) =>
+    ['source', 'destServer', 'pic', 'domainsText', 'rows', 'cfAccountId', 'jobId', 'cfJobId'].forEach((k) =>
       clearPersistedState(`create-wpsite:${k}`),
     );
   };
@@ -249,50 +245,52 @@ const CreateWpsite: React.FC = () => {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="Tạo hàng loạt domain mới từ 1 site nguồn (template), trên cùng 1 server."
-        description="Chọn 1 domain nguồn (VD: site trắng dùng làm template) và server đích - domain mới sẽ được cài trên đúng server đó. Nếu domain đích đã có site đang chạy, site cũ sẽ bị GHI ĐÈ khi chạy thật (giống Clone WordPress). Domain đích PHẢI có zone trên Cloudflare trước khi tạo - dùng khối 'Thêm vào Cloudflare' bên dưới nếu còn thiếu."
+        message="Tạo hàng loạt domain mới từ 1 template theo PIC, trên cùng 1 server."
+        description="Chọn PIC rồi chọn template tương ứng - domain nguồn và server đích tự khớp theo template đó, không cần chọn tay. Nếu domain đích đã có site đang chạy, site cũ sẽ bị GHI ĐÈ khi chạy thật. Domain đích PHẢI có zone trên Cloudflare trước khi tạo - dùng khối 'Thêm vào Cloudflare' bên dưới nếu còn thiếu."
       />
 
       <Card style={{ marginBottom: 16 }}>
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <div>
-            <Typography.Text strong>Domain nguồn (template)</Typography.Text>
-            <DomainSelect
-              mode="single"
-              value={source ? [source] : []}
-              onChange={handleSourceChange}
-              placeholder="Domain nguồn (đã đồng bộ)..."
+            <Typography.Text strong>PIC</Typography.Text>
+            <Select
+              style={{ width: '100%', marginTop: 4 }}
+              allowClear
+              showSearch
+              placeholder="Tất cả PIC"
+              value={selectedPic}
+              onChange={(v) => {
+                setSelectedPic(v);
+                setSource('');
+                setDestServer(undefined);
+                setSourceServers([]);
+              }}
+              options={pics.map((p) => ({ value: p.code, label: p.code }))}
             />
           </div>
 
-          {source && (
-            <div>
-              <Typography.Text strong>Server đích (nơi sẽ tạo domain mới)</Typography.Text>
-              {!sourceLoading && sourceServers.length === 0 ? (
-                <Alert
-                  style={{ marginTop: 4 }}
-                  type="warning"
-                  showIcon
-                  message={`Không tìm thấy "${source}" trên server nào - domain nguồn có thể chưa đồng bộ`}
-                />
-              ) : (
-                <Select
-                  style={{ width: '100%', marginTop: 4 }}
-                  loading={sourceLoading}
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="Chọn server đích..."
-                  value={destServer}
-                  onChange={setDestServer}
-                  options={[...sourceServers]
-                    .sort((a, b) => (serverDomainsCount[a.server_name] ?? Infinity) - (serverDomainsCount[b.server_name] ?? Infinity))
-                    .map((s) => ({
-                      value: s.server_name,
-                      label: `${s.server_name} (${s.server_ip}) — ${serverDomainsCount[s.server_name] ?? '?'} domain`,
-                    }))}
-                />
-              )}
-            </div>
+          <div>
+            <Typography.Text strong>Template (domain nguồn, server đích tự khớp)</Typography.Text>
+            <Select
+              style={{ width: '100%', marginTop: 4 }}
+              loading={templateLoading}
+              showSearch
+              optionFilterProp="label"
+              placeholder="Chọn template..."
+              value={source || undefined}
+              onChange={handleTemplateSelect}
+              notFoundContent={templateLoading ? 'Đang tìm...' : 'Không có template cho PIC này'}
+              options={[...templateOptions]
+                .sort((a, b) => a.server_name.localeCompare(b.server_name))
+                .map((d) => ({
+                  value: d.domain,
+                  label: `${d.server_name} (${d.server_ip}) — ${d.domain}`,
+                }))}
+            />
+          </div>
+
+          {source && destServer && (
+            <Alert type="success" showIcon message={`Server đích: ${destServer} (${destIp || '?'})`} />
           )}
         </Space>
       </Card>
