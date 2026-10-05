@@ -251,42 +251,44 @@ const CreateWpsite: React.FC = () => {
 
       <Card style={{ marginBottom: 16 }}>
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <div>
-            <Typography.Text strong>PIC</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              allowClear
-              showSearch
-              placeholder="Tất cả PIC"
-              value={selectedPic}
-              onChange={(v) => {
-                setSelectedPic(v);
-                setSource('');
-                setDestServer(undefined);
-                setSourceServers([]);
-              }}
-              options={pics.map((p) => ({ value: p.code, label: p.code }))}
-            />
-          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ width: 240, flexShrink: 0 }}>
+              <Typography.Text strong>PIC</Typography.Text>
+              <Select
+                style={{ width: '100%', marginTop: 4 }}
+                allowClear
+                showSearch
+                placeholder="Tất cả PIC"
+                value={selectedPic}
+                onChange={(v) => {
+                  setSelectedPic(v);
+                  setSource('');
+                  setDestServer(undefined);
+                  setSourceServers([]);
+                }}
+                options={pics.map((p) => ({ value: p.code, label: p.code }))}
+              />
+            </div>
 
-          <div>
-            <Typography.Text strong>Template (domain nguồn, server đích tự khớp)</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              loading={templateLoading}
-              showSearch
-              optionFilterProp="label"
-              placeholder="Chọn template..."
-              value={source || undefined}
-              onChange={handleTemplateSelect}
-              notFoundContent={templateLoading ? 'Đang tìm...' : 'Không có template cho PIC này'}
-              options={[...templateOptions]
-                .sort((a, b) => a.server_name.localeCompare(b.server_name))
-                .map((d) => ({
-                  value: d.domain,
-                  label: `${d.server_name} (${d.server_ip}) — ${d.domain}`,
-                }))}
-            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Typography.Text strong>Template (domain nguồn, server đích tự khớp)</Typography.Text>
+              <Select
+                style={{ width: '100%', marginTop: 4 }}
+                loading={templateLoading}
+                showSearch
+                optionFilterProp="label"
+                placeholder="Chọn template..."
+                value={source || undefined}
+                onChange={handleTemplateSelect}
+                notFoundContent={templateLoading ? 'Đang tìm...' : 'Không có template cho PIC này'}
+                options={[...templateOptions]
+                  .sort((a, b) => a.server_name.localeCompare(b.server_name))
+                  .map((d) => ({
+                    value: d.domain,
+                    label: `${d.server_name} (${d.server_ip}) — ${d.domain}`,
+                  }))}
+              />
+            </div>
           </div>
 
           {source && destServer && (
