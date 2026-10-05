@@ -110,6 +110,14 @@ class CFClient:
         return items
 
     def get_zone_id(self, domain: str):
+        """Exact-match the domain against Cloudflare's zones first (the
+        common case: `domain` IS a zone's name) - if that fails, walk up
+        the label chain trying progressively shorter parent domains, since
+        a Cloudflare zone is always a registrable root domain and never a
+        subdomain itself (e.g. `server1.wp-template.site` has no zone of
+        its own - the zone is `wp-template.site`, and the subdomain is just
+        a DNS record inside it). Capped at 5 labels and stops once only 2
+        remain, so this never degenerates into querying a bare TLD."""
         apex = domain.strip().lower()
         if apex.startswith("www."):
             apex = apex[4:]
@@ -117,13 +125,24 @@ class CFClient:
             if apex in self._zone_cache:
                 return self._zone_cache[apex]
 
-        r = self._get(CF_BASE, params={"name": apex, "per_page": 5})
-        zone_id = None
-        if r.get("success") and r.get("result"):
-            zone_id = r["result"][0]["id"]
+        zone_id = self._lookup_zone_by_name(apex)
+        if zone_id is None:
+            labels = apex.split(".")
+            for i in range(1, min(len(labels) - 1, 4)):
+                parent = ".".join(labels[i:])
+                zone_id = self._lookup_zone_by_name(parent)
+                if zone_id is not None:
+                    break
+
         with self._cache_lock:
             self._zone_cache[apex] = zone_id
         return zone_id
+
+    def _lookup_zone_by_name(self, name: str):
+        r = self._get(CF_BASE, params={"name": name, "per_page": 5})
+        if r.get("success") and r.get("result"):
+            return r["result"][0]["id"]
+        return None
 
     def get_a_records(self, zone_id: str):
         r = self._get(f"{CF_BASE}/{zone_id}/dns_records", params={"type": "A"})
