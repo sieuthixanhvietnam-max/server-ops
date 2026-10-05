@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.models import CfAccount, CfAccountPic, CfZone, Domain, Pic, PicTeam, Server, ServerPic, ServerPicTeam
 
-SEED_PIC_CODES = ["CHAT", "TIMM", "QUICK", "CREW", "BANG", "VIN", "PII", "RUP", "SOP", "COS", "ARM", "PUN", "OVN"]
+SEED_PIC_CODES = [
+    "CHAT", "TIMM", "QUICK", "CREW", "BANG", "VIN", "PII", "RUP", "SOP", "COS", "ARM", "PUN", "OVN", "BEAR",
+]
 
 # do-sgp1-03 runs internal tools/webapps, not WordPress sites - it has no
 # domains to plan by PIC, so it's excluded from the "chưa gán" review queue
