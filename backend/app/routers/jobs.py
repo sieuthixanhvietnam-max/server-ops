@@ -37,7 +37,7 @@ from app.ops import (
     wp_plugin_ops,
     wp_restore_ops,
 )
-from app.ops.validation import is_valid_domain, is_valid_ip, validate_domains
+from app.ops.validation import is_template_domain, is_valid_domain, is_valid_ip, validate_domains
 from app.pic_service import suggest_cf_account_for_ip
 from app.site_credentials_service import persist_site_credentials
 
@@ -313,6 +313,9 @@ async def _resolve_clone_pairs(db: Session, pairs: list[ClonePair]) -> tuple[lis
         source, target = p.source.strip().lower(), p.target.strip().lower()
         if not is_valid_domain(source) or not is_valid_domain(target):
             errors.append(f"{source} -> {target}: invalid domain format")
+            continue
+        if is_template_domain(target):
+            errors.append(f"{source} -> {target}: target là domain template - bị chặn để tránh ghi đè template")
             continue
         source_server = p.source_server.strip() if p.source_server else None
         server, err = _resolve_domain_server(db, source, source_server)

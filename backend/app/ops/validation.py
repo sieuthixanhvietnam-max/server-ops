@@ -26,6 +26,24 @@ def validate_domains(domains: list[str]) -> tuple[list[str], list[str]]:
     return valid, invalid
 
 
+# Every "Tạo WordPress mới" template lives at <server_name>.wp-template.site
+# (see the site-trang.com -> wp-template.site migration) and is each
+# server's wptt Website_chinh - the one domain every future clone on that
+# server is sourced from. clone_wpsite/create_wpsite overwrite an existing
+# target unconditionally, so letting a template domain through as a TARGET
+# would let one fat-fingered request permanently destroy the one asset a
+# whole PIC's future site creation depends on, with no backup to restore
+# from. This is deliberately a plain suffix check, not a DB flag - Domain
+# is a full-replace-on-sync table, so a persisted "is_template" column
+# would need to survive every resync; the naming convention is already the
+# single source of truth by construction.
+TEMPLATE_DOMAIN_SUFFIX = ".wp-template.site"
+
+
+def is_template_domain(domain: str) -> bool:
+    return domain.strip().lower().endswith(TEMPLATE_DOMAIN_SUFFIX)
+
+
 def is_valid_ip(ip: str) -> bool:
     parts = ip.strip().split(".")
     if len(parts) != 4:

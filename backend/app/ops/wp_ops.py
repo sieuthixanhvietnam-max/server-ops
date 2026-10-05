@@ -317,6 +317,23 @@ def clone_wpsite(entries: list[dict], log, dry_run: bool = False) -> list[dict]:
             verify = verify_by_target.get(p["target"], {"http_status": 0, "ok": False, "note": "không kiểm tra được"})
             label = f"{p['source']} -> {p['target']} ({p['ip']})"
             log(f"[{'ok' if verify['ok'] else 'info'}] {label}: {verify['note']}")
+
+            # Only meaningful once the site is confirmed up - a dead site
+            # has no siteurl to read and no point checking SSL on. Both are
+            # additive fields (site_url_ok/ssl_ok) so VerifyBadge and every
+            # other existing reader of `verify` (http_status/ok/note) keeps
+            # working unchanged for every OTHER caller of
+            # poll_http_via_ssh_batch that doesn't pass through here.
+            if verify.get("ok"):
+                site_url_ok, site_url_note = verify_ops.check_siteurl_via_ssh(p["ip"], p["user"], p["key"], p["target"])
+                ssl_ok, ssl_note = verify_ops.check_ssl_external(p["target"])
+                if not site_url_ok:
+                    log(f"[warn] {label}: {site_url_note}")
+                if not ssl_ok:
+                    log(f"[warn] {label}: {ssl_note}")
+                verify = {**verify, "site_url_ok": site_url_ok, "site_url_note": site_url_note,
+                           "ssl_ok": ssl_ok, "ssl_note": ssl_note}
+
             results[p["idx"]] = {
                 "source": p["source"], "target": p["target"], "ip": p["ip"],
                 "status": "OK", "note": p["note"],

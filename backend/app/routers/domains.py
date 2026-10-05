@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_username
 from app.database import get_db
-from app.models import Domain
+from app.models import Domain, SiteCredential
+from app.ops import verify_ops, wp_template_ops
 from app.pic_service import server_names_for_pic
 from app.query_utils import apply_sort
 from app.schemas import DomainOut
@@ -111,3 +112,57 @@ def domains_exists_batch(body: ExistsBatchRequest, db: Session = Depends(get_db)
         return {"data": {}, "success": True}
     existing = {r[0] for r in db.execute(select(Domain.domain).where(Domain.domain.in_(domains)))}
     return {"data": {d: (d in existing) for d in domains}, "success": True}
+
+
+class CheckHttpBatchRequest(BaseModel):
+    domains: list[str]
+
+
+@router.post("/check-http-batch")
+def domains_check_http_batch(body: CheckHttpBatchRequest, db: Session = Depends(get_db)):
+    """Live HTTP-over-SSH health check (not from synced data - there's no
+    local field for it). Unlike exists-batch this opens a real SSH
+    connection per distinct server, so callers should keep the list small
+    (a picker's own options, not a bulk export). Used for the OK/FAIL badge
+    on each wp-template.site template in the create-wpsite picker."""
+    domains = sorted({d.strip().lower() for d in body.domains if d.strip()})
+    if not domains:
+        return {"data": {}, "success": True}
+    rows = db.execute(select(Domain).where(Domain.domain.in_(domains))).scalars().all()
+    entries = [{"domain": r.domain, "ip": r.server_ip, "profile": r.profile} for r in rows]
+    if not entries:
+        return {"data": {}, "success": True}
+    return {"data": verify_ops.check_domains_health(entries), "success": True}
+
+
+class TemplateInfoBatchRequest(BaseModel):
+    domains: list[str]
+
+
+@router.post("/template-info-batch")
+def domains_template_info_batch(body: TemplateInfoBatchRequest, db: Session = Depends(get_db)):
+    """WP core version / PHP version / active theme / plugin list for each
+    domain, straight off the server via WP-CLI (see wp_template_ops) - used
+    for the create-wpsite template info panel and for flagging whichever
+    template has drifted from the rest. Also surfaces the saved admin
+    USERNAME from SiteCredential when one exists - never the password, which
+    stays behind the existing /api/site-credentials/{id}/reveal endpoint."""
+    domains = sorted({d.strip().lower() for d in body.domains if d.strip()})
+    if not domains:
+        return {"data": {}, "success": True}
+    rows = db.execute(select(Domain).where(Domain.domain.in_(domains))).scalars().all()
+    entries = [{"domain": r.domain, "ip": r.server_ip, "profile": r.profile} for r in rows]
+    if not entries:
+        return {"data": {}, "success": True}
+
+    creds = db.execute(
+        select(SiteCredential).where(SiteCredential.domain.in_(domains))
+    ).scalars().all()
+    username_by_domain = {c.domain: c.username for c in creds}
+
+    results = wp_template_ops.get_template_info(entries)
+    data = {}
+    for r in results:
+        r["username"] = username_by_domain.get(r["domain"])
+        data[r["domain"]] = r
+    return {"data": data, "success": True}

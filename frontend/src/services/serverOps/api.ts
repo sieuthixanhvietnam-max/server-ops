@@ -51,6 +51,30 @@ export async function checkDomainsExistBatch(domains: string[], options?: { [key
   });
 }
 
+/** POST /api/domains/check-http-batch */
+export async function checkDomainsHttpBatch(domains: string[], options?: { [key: string]: any }) {
+  return request<{ data: Record<string, API.DomainHealthResult>; success: boolean }>(
+    '/api/domains/check-http-batch',
+    {
+      method: 'POST',
+      data: { domains },
+      ...(options || {}),
+    },
+  );
+}
+
+/** POST /api/domains/template-info-batch */
+export async function getTemplateInfoBatch(domains: string[], options?: { [key: string]: any }) {
+  return request<{ data: Record<string, API.TemplateInfoResult>; success: boolean }>(
+    '/api/domains/template-info-batch',
+    {
+      method: 'POST',
+      data: { domains },
+      ...(options || {}),
+    },
+  );
+}
+
 /** GET /api/servers */
 export async function listServers(
   params: {

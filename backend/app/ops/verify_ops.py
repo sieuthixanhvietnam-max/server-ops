@@ -121,6 +121,100 @@ def poll_http_via_ssh_batch(
     return results
 
 
+def check_domains_health(entries: list[dict], workers: int = VERIFY_WORKERS) -> dict[str, dict]:
+    """One-shot (no retry/poll loop) HTTP-over-SSH check for domains that
+    are already expected to be up - unlike poll_http_via_ssh_batch, whose
+    retry budget exists because its targets were *just* cloned and may
+    still be mid-setup. Used for the OK/FAIL health badge on each
+    wp-template.site template in the create-wpsite picker: these are
+    long-lived sites, so a single check is enough and there's no reason to
+    make the user wait up to max_wait for a page refresh.
+
+    entries: [{"domain", "ip", "profile"}] (profile, not a pre-resolved
+    user/key, since the caller - an HTTP route - doesn't have an open SSH
+    session to reuse; resolving it here also means a template on a
+    currently-unreachable server reports clearly instead of raising).
+    Returns {domain: {"http_status", "ok", "note"}}."""
+
+    def _one(e: dict) -> tuple[str, dict]:
+        domain, ip, profile = e["domain"], e["ip"], e["profile"]
+        user, key, err = ssh_ops.establish_connection(ip, profile)
+        if not user:
+            return domain, {"http_status": 0, "ok": False, "note": err or "không kết nối được SSH"}
+        code, ok = check_http_via_ssh(ip, user, key, domain)
+        return domain, {"http_status": code, "ok": ok, "note": f"HTTP {code}" if ok else f"lỗi (HTTP {code})"}
+
+    results: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_one, e) for e in entries]
+        for future in as_completed(futures):
+            domain, result = future.result()
+            results[domain] = result
+    return results
+
+
+_SITEURL_CHECK_SCRIPT = """#!/bin/bash
+DOMAIN="$1"
+PATH_WP="/usr/local/lsws/$DOMAIN/html"
+[[ -f /etc/wptt/php/php-cli-domain-config ]] && \\
+    . /etc/wptt/php/php-cli-domain-config "$DOMAIN" 2>/dev/null || true
+WP_REAL_BIN=$(command -v wp)
+wp() {
+    if [[ -n "${User_name_vhost:-}" ]]; then
+        if [[ -n "${PHP_BINARY:-}" && -f "$PHP_BINARY" ]]; then
+            runuser -u "$User_name_vhost" -- "$PHP_BINARY" "$WP_REAL_BIN" "$@"
+        else
+            runuser -u "$User_name_vhost" -- "$WP_REAL_BIN" "$@"
+        fi
+    elif [[ -n "${PHP_BINARY:-}" && -f "$PHP_BINARY" ]]; then
+        "$PHP_BINARY" "$WP_REAL_BIN" "$@"
+    else
+        "$WP_REAL_BIN" "$@"
+    fi
+}
+wp option get siteurl --path="$PATH_WP" --allow-root 2>/dev/null
+"""
+
+
+def check_siteurl_via_ssh(ip: str, user: str, key: str, domain: str, timeout: int = 15) -> tuple[bool, str]:
+    """Confirms the DB's `siteurl` option actually got rewritten to the new
+    domain during clone. check_http_via_ssh alone can't catch a botched
+    search-replace: the homepage can still return HTTP 200 (served from
+    cache, or simply not linking anywhere) while every internal link,
+    redirect and the login form still point at the OLD domain. Only
+    meaningful once check_http_via_ssh has already confirmed the site is
+    up - calling this on a site that isn't there yet just reports
+    "không đọc được siteurl", which is true but uninformative."""
+    try:
+        rc, output = ssh_ops.run_remote(ip, user, key, _SITEURL_CHECK_SCRIPT, args=[domain], timeout=timeout)
+    except Exception as exc:
+        return False, f"lỗi kiểm tra siteurl: {exc}"
+    value = output.strip().splitlines()[-1] if output.strip() else ""
+    host = urlparse(value).netloc.split(":")[0].lower()
+    if not host:
+        return False, "không đọc được siteurl"
+    if host == domain.lower():
+        return True, f"siteurl khớp ({value})"
+    return False, f"siteurl KHÔNG khớp domain mới: {value}"
+
+
+def check_ssl_external(domain: str, timeout: int = 15) -> tuple[bool, str]:
+    """Same public HTTPS request as check_http_external, but WITHOUT
+    verify=False - that function deliberately ignores certificate errors
+    (it only cares whether *something* answers), which means a broken/
+    not-yet-issued cert on a freshly created domain silently passes its
+    check. This one exists specifically to catch that gap: an SSLError here
+    means a real visitor's browser would show a security warning, while
+    check_http_external would still report the site as fine."""
+    try:
+        requests.get(f"https://{domain}/", timeout=timeout, verify=True, allow_redirects=True)
+        return True, "SSL hợp lệ"
+    except requests.exceptions.SSLError as exc:
+        return False, f"lỗi SSL: {exc}"
+    except Exception as exc:
+        return False, f"chưa kiểm tra được từ ngoài: {exc}"
+
+
 def check_http_external(domain: str, timeout: int = 15) -> tuple[int, bool]:
     """Same semantics as check_http_via_ssh but from outside, over the real
     public domain - only meaningful once DNS/CDN already points here."""

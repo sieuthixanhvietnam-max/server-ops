@@ -12,6 +12,24 @@ declare namespace API {
     source_updated: string | null;
   };
 
+  type DomainHealthResult = {
+    http_status: number;
+    ok: boolean;
+    note: string;
+  };
+
+  type TemplateInfoResult = {
+    domain: string;
+    ip: string;
+    status: string;
+    core_version: string;
+    php_version: string;
+    theme: string;
+    plugins: { name: string; status: string; version: string }[];
+    username: string | null;
+    note: string;
+  };
+
   type ServerItem = {
     id: number;
     server_name: string;
@@ -208,6 +226,13 @@ declare namespace API {
     ok?: boolean;
     gone?: boolean;
     note: string;
+    /** Only populated by clone/create-wpsite, and only once `ok` is true -
+     * siteurl match + real (non-skip-verify) SSL check. Absent for every
+     * other job type that reuses VerifyInfo. */
+    site_url_ok?: boolean;
+    site_url_note?: string;
+    ssl_ok?: boolean;
+    ssl_note?: string;
   };
 
   type CloneWpsiteResult = {

@@ -8,6 +8,8 @@ import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedStat
 import {
   checkCfZonesBatch,
   checkDomainsExistBatch,
+  checkDomainsHttpBatch,
+  getTemplateInfoBatch,
   listCfAccountOptions,
   listDomains,
   listPics,
@@ -53,6 +55,25 @@ const DNS_STATUS_LABELS: Record<string, string> = {
 const parseDomains = (text: string) =>
   Array.from(new Set(text.split(/\r?\n/).map((d) => d.trim().toLowerCase()).filter(Boolean)));
 
+/** Most-common non-empty value in a list - used to flag whichever template
+ * disagrees with the rest (WP core / PHP version / theme), not to judge
+ * which value is "correct". */
+const majorityValue = (values: (string | undefined)[]): string | undefined => {
+  const counts = new Map<string, number>();
+  values.forEach((v) => {
+    if (v) counts.set(v, (counts.get(v) || 0) + 1);
+  });
+  let best: string | undefined;
+  let bestCount = 0;
+  counts.forEach((count, value) => {
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
+    }
+  });
+  return best;
+};
+
 const NsTag: React.FC<{ status?: string }> = ({ status }) => {
   if (status === 'active')
     return (
@@ -84,6 +105,10 @@ const CreateWpsite: React.FC = () => {
   const [selectedPic, setSelectedPic] = usePersistedState<string | undefined>('create-wpsite:pic', undefined);
   const [templateOptions, setTemplateOptions] = useState<API.DomainItem[]>([]);
   const [templateLoading, setTemplateLoading] = useState(false);
+  const [healthMap, setHealthMap] = useState<Record<string, API.DomainHealthResult>>({});
+  const [healthChecking, setHealthChecking] = useState(false);
+  const [infoMap, setInfoMap] = useState<Record<string, API.TemplateInfoResult>>({});
+  const [infoChecking, setInfoChecking] = useState(false);
 
   const [domainsText, setDomainsText] = usePersistedState('create-wpsite:domainsText', '');
   const [rows, setRows] = usePersistedState<Row[]>('create-wpsite:rows', []);
@@ -110,10 +135,38 @@ const CreateWpsite: React.FC = () => {
 
   useEffect(() => {
     setTemplateLoading(true);
+    setHealthMap({});
+    setInfoMap({});
     listDomains({ domain: 'wp-template.site', pic: selectedPic, pageSize: 100 })
       .then((res) => setTemplateOptions(res.data || []))
       .finally(() => setTemplateLoading(false));
   }, [selectedPic]);
+
+  const runHealthCheck = async () => {
+    if (!templateOptions.length) return;
+    setHealthChecking(true);
+    try {
+      const res = await checkDomainsHttpBatch(templateOptions.map((d) => d.domain));
+      setHealthMap(res.data || {});
+    } catch (err: any) {
+      message.error(`Lỗi khi kiểm tra tình trạng template: ${err?.message || err}`);
+    } finally {
+      setHealthChecking(false);
+    }
+  };
+
+  const runInfoCheck = async () => {
+    if (!templateOptions.length) return;
+    setInfoChecking(true);
+    try {
+      const res = await getTemplateInfoBatch(templateOptions.map((d) => d.domain));
+      setInfoMap(res.data || {});
+    } catch (err: any) {
+      message.error(`Lỗi khi kiểm tra chi tiết template: ${err?.message || err}`);
+    } finally {
+      setInfoChecking(false);
+    }
+  };
 
   useEffect(() => {
     if (cfJob?.status === 'success') handleCheck();
@@ -229,6 +282,8 @@ const CreateWpsite: React.FC = () => {
     setSource('');
     setDestServer(undefined);
     setSelectedPic(undefined);
+    setHealthMap({});
+    setInfoMap({});
     setDomainsText('');
     setRows([]);
     setCfAccountId(undefined);
@@ -239,6 +294,23 @@ const CreateWpsite: React.FC = () => {
     );
   };
 
+  const infoRows = templateOptions.map((d) => infoMap[d.domain]).filter(Boolean) as API.TemplateInfoResult[];
+  const majorityCore = majorityValue(infoRows.map((r) => r.core_version));
+  const majorityPhp = majorityValue(infoRows.map((r) => r.php_version));
+  const majorityTheme = majorityValue(infoRows.map((r) => r.theme));
+
+  const renderDriftCell = (value: string | undefined, majority: string | undefined) => {
+    if (!value) return <span style={{ color: token.colorTextQuaternary }}>-</span>;
+    if (majority && value !== majority) {
+      return (
+        <Tooltip title={`Khác với đa số template (${majority})`}>
+          <Tag color="warning">{value}</Tag>
+        </Tooltip>
+      );
+    }
+    return <span>{value}</span>;
+  };
+
   return (
     <PageContainer title="Tạo WordPress mới" extra={<ClearCacheButton onClear={clearCache} />}>
       <Alert
@@ -246,7 +318,7 @@ const CreateWpsite: React.FC = () => {
         showIcon
         style={{ marginBottom: 12 }}
         message="Tạo hàng loạt domain mới từ 1 template theo PIC, trên cùng 1 server."
-        description="Chọn PIC rồi chọn template tương ứng - domain nguồn và server đích tự khớp theo template đó, không cần chọn tay. Nếu domain đích đã có site đang chạy, site cũ sẽ bị GHI ĐÈ khi chạy thật. Domain đích PHẢI có zone trên Cloudflare trước khi tạo - dùng khối 'Thêm vào Cloudflare' bên dưới nếu còn thiếu."
+        description="Chọn PIC rồi chọn template tương ứng - domain nguồn và server đích tự khớp theo template đó, không cần chọn tay. Nếu domain đích đã có site đang chạy, site cũ sẽ bị GHI ĐÈ khi chạy thật (hệ thống tự chặn nếu domain đích chính là 1 template khác). Domain đích PHẢI có zone trên Cloudflare trước khi tạo - dùng khối 'Thêm vào Cloudflare' bên dưới nếu còn thiếu."
       />
 
       <Card style={{ marginBottom: 16 }}>
@@ -296,6 +368,95 @@ const CreateWpsite: React.FC = () => {
           )}
         </Space>
       </Card>
+
+      {templateOptions.length > 0 && (
+        <Card
+          size="small"
+          style={{ marginBottom: 16 }}
+          title={`Tình trạng & chi tiết template (${templateOptions.length}${selectedPic ? ` - PIC ${selectedPic}` : ''})`}
+          extra={
+            <Space>
+              <Button size="small" loading={healthChecking} onClick={runHealthCheck}>
+                Kiểm tra tình trạng
+              </Button>
+              <Button size="small" loading={infoChecking} onClick={runInfoCheck}>
+                Kiểm tra chi tiết (đồng nhất)
+              </Button>
+            </Space>
+          }
+        >
+          <Table<API.DomainItem>
+            size="small"
+            rowKey="domain"
+            dataSource={templateOptions}
+            pagination={false}
+            expandable={{
+              rowExpandable: (r) => !!infoMap[r.domain]?.plugins?.length,
+              expandedRowRender: (r) => (
+                <Table
+                  size="small"
+                  rowKey="name"
+                  dataSource={infoMap[r.domain]?.plugins || []}
+                  pagination={false}
+                  columns={[
+                    { title: 'Plugin', dataIndex: 'name' },
+                    {
+                      title: 'Trạng thái',
+                      dataIndex: 'status',
+                      render: (v: string) => <Tag color={v === 'active' ? 'green' : 'default'}>{v}</Tag>,
+                    },
+                    { title: 'Phiên bản', dataIndex: 'version' },
+                  ]}
+                />
+              ),
+            }}
+            columns={[
+              { title: 'Server', dataIndex: 'server_name' },
+              {
+                title: 'Domain',
+                dataIndex: 'domain',
+                render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
+              },
+              {
+                title: 'Tình trạng',
+                render: (_, r) => {
+                  const h = healthMap[r.domain];
+                  if (!h) return <Tag>Chưa kiểm tra</Tag>;
+                  return (
+                    <Tag color={h.ok ? 'success' : 'error'}>{h.ok ? `OK (HTTP ${h.http_status})` : h.note}</Tag>
+                  );
+                },
+              },
+              { title: 'WP Core', render: (_, r) => renderDriftCell(infoMap[r.domain]?.core_version, majorityCore) },
+              { title: 'PHP', render: (_, r) => renderDriftCell(infoMap[r.domain]?.php_version, majorityPhp) },
+              { title: 'Theme', render: (_, r) => renderDriftCell(infoMap[r.domain]?.theme, majorityTheme) },
+              {
+                title: 'Username',
+                render: (_, r) =>
+                  infoMap[r.domain]?.username || <span style={{ color: token.colorTextQuaternary }}>-</span>,
+              },
+              {
+                title: 'Plugin',
+                render: (_, r) =>
+                  infoMap[r.domain] ? infoMap[r.domain].plugins.length : <span style={{ color: token.colorTextQuaternary }}>-</span>,
+              },
+              {
+                title: '',
+                width: 90,
+                render: (_, r) => (
+                  <Button
+                    size="small"
+                    type={source === r.domain ? 'primary' : 'default'}
+                    onClick={() => handleTemplateSelect(r.domain)}
+                  >
+                    Chọn
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      )}
 
       <Card style={{ marginBottom: 16 }}>
         <Typography.Text strong>Danh sách domain mới cần tạo</Typography.Text>
