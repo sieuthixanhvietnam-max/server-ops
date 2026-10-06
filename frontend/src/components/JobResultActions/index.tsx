@@ -1,7 +1,7 @@
 import { copyText } from '@/utils/clipboard';
 import { exportToCsv } from '@/utils/exportCsv';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
-import { Button, Space } from 'antd';
+import { Button, Typography, theme } from 'antd';
 import React from 'react';
 
 // Same quoting rule as exportToCsv, but triggered by '\t' (the column
@@ -13,16 +13,23 @@ const escapeTsvCell = (v: string | number) => {
   return /["\t\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-/** Drop-in "Xuất CSV" + "Copy (dán Sheet)" pair for any job result table.
- * Callers pass the exact headers/rows they already render on screen (as
- * display text, not raw status codes - what a human reading the pasted
- * Sheet expects to see matches what they saw in the UI). Renders nothing
- * when there's no data yet, so it's safe to mount unconditionally. */
+/** Drop-in "Xuất CSV" + "Copy (dán Sheet)" toolbar for any job result table -
+ * a single bordered strip with the row count on the left (the exact text a
+ * page wants, defaulting to a generic "N dòng kết quả") and both actions
+ * grouped as one joined control on the right, so every result table in the
+ * app gets the same look instead of each page inventing its own row-count
+ * label + loose buttons. Callers pass the exact headers/rows they already
+ * render on screen (as display text, not raw status codes - what a human
+ * reading the pasted Sheet expects to see matches what they saw in the UI).
+ * Renders nothing when there's no data yet, so it's safe to mount
+ * unconditionally. */
 const JobResultActions: React.FC<{
   headers: string[];
   rows: (string | number)[][];
   filename: string;
-}> = ({ headers, rows, filename }) => {
+  countLabel?: string;
+}> = ({ headers, rows, filename, countLabel }) => {
+  const { token } = theme.useToken();
   if (!rows.length) return null;
 
   const handleCopy = () => {
@@ -31,14 +38,42 @@ const JobResultActions: React.FC<{
   };
 
   return (
-    <Space size="small" style={{ marginBottom: 8 }}>
-      <Button size="small" icon={<DownloadOutlined />} onClick={() => exportToCsv(filename, headers, rows)}>
-        Xuất CSV
-      </Button>
-      <Button size="small" icon={<CopyOutlined />} onClick={handleCopy}>
-        Copy (dán Sheet)
-      </Button>
-    </Space>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 8,
+        padding: '6px 6px 6px 12px',
+        marginBottom: 12,
+        background: token.colorFillAlter,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: token.borderRadiusLG,
+      }}
+    >
+      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+        {countLabel ?? `${rows.length} dòng kết quả`}
+      </Typography.Text>
+      <div style={{ display: 'flex' }}>
+        <Button
+          size="small"
+          icon={<DownloadOutlined />}
+          style={{ borderEndEndRadius: 0, borderStartEndRadius: 0 }}
+          onClick={() => exportToCsv(filename, headers, rows)}
+        >
+          Xuất CSV
+        </Button>
+        <Button
+          size="small"
+          icon={<CopyOutlined />}
+          style={{ borderEndStartRadius: 0, borderStartStartRadius: 0, marginInlineStart: -1 }}
+          onClick={handleCopy}
+        >
+          Copy (dán Sheet)
+        </Button>
+      </div>
+    </div>
   );
 };
 

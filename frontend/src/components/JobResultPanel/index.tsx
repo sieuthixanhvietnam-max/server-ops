@@ -151,14 +151,12 @@ const JobResultPanel: React.FC<{ job?: API.JobDetail; onRetry?: () => void }> = 
     const keys = buildKeys(result);
     return (
       <div style={{ marginTop: 16 }}>
-        <Typography.Text type="secondary">{result.length} dòng kết quả</Typography.Text>
-        <div style={{ marginTop: 8 }}>
-          <JobResultActions
-            headers={keys}
-            rows={result.map((row) => keys.map((k) => cellToText(row[k])))}
-            filename={`job-${job.job_type}-${job.id}.csv`}
-          />
-        </div>
+        <JobResultActions
+          headers={keys}
+          rows={result.map((row) => keys.map((k) => cellToText(row[k])))}
+          filename={`job-${job.job_type}-${job.id}.csv`}
+          countLabel={`${result.length} dòng kết quả`}
+        />
         <Table
           size="small"
           rowKey={(_, idx) => String(idx)}

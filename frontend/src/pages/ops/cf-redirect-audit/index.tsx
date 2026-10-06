@@ -115,7 +115,6 @@ const CfRedirectAudit: React.FC = () => {
           mode === 'anomalies' &&
           (job.result?.length ? (
             <>
-              <Typography.Text type="secondary">{job.result.length} zone có vấn đề</Typography.Text>
               <JobResultActions
                 headers={['Domain', 'Số rule redirect', 'Vấn đề', 'Target (Cloudflare)']}
                 rows={(job.result as API.CfAuditRedirectFinding[]).map((r) => [
@@ -125,6 +124,7 @@ const CfRedirectAudit: React.FC = () => {
                   r.targets || '',
                 ])}
                 filename="cf-redirect-audit-anomalies.csv"
+                countLabel={`${job.result.length} zone có vấn đề`}
               />
               <Table<API.CfAuditRedirectFinding>
                 style={{ marginTop: 8 }}
@@ -152,16 +152,7 @@ const CfRedirectAudit: React.FC = () => {
           mode === 'full' &&
           (inventoryRows.length ? (
             <>
-              <div
-                style={{
-                  marginTop: 16,
-                  marginBottom: 8,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <Typography.Text type="secondary">{inventoryRows.length} redirect rule</Typography.Text>
+              <div style={{ marginTop: 16 }}>
                 <JobResultActions
                   headers={['Domain đích', 'Số domain trỏ vào', 'Domain nguồn', 'Target', 'Mã redirect']}
                   rows={sortedInventoryRows.map((r) => [
@@ -172,6 +163,7 @@ const CfRedirectAudit: React.FC = () => {
                     r.code,
                   ])}
                   filename={`cf-redirects-${new Date().toISOString().slice(0, 10)}.csv`}
+                  countLabel={`${inventoryRows.length} redirect rule`}
                 />
               </div>
 

@@ -7,7 +7,7 @@ import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedStat
 import { triggerCfFirewallUpdate } from '@/services/serverOps/api';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, App, Button, Card, Input, Segmented, Table, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Input, Segmented, Table, Tag } from 'antd';
 import React, { useState } from 'react';
 
 const { TextArea } = Input;
@@ -134,7 +134,6 @@ const CfFirewall: React.FC = () => {
 
         {(job?.status === 'success' || job?.status === 'failed') && (
           <>
-            <Typography.Text type="secondary">{job.result?.length || 0} dòng kết quả</Typography.Text>
             <JobResultActions
               headers={['Domain', 'Trạng thái', 'Ghi chú']}
               rows={(job.result as API.CfFirewallUpdateResult[]).map((r) => [
@@ -143,6 +142,7 @@ const CfFirewall: React.FC = () => {
                 r.note || '',
               ])}
               filename="cf-firewall-update-result.csv"
+              countLabel={`${job.result?.length || 0} dòng kết quả`}
             />
             <Table<API.CfFirewallUpdateResult>
               size="small"
