@@ -316,8 +316,15 @@ async def _resolve_clone_pairs(db: Session, pairs: list[ClonePair]) -> tuple[lis
         if not is_valid_domain(source) or not is_valid_domain(target):
             errors.append(f"{source} -> {target}: invalid domain format")
             continue
-        if is_template_domain(target):
-            errors.append(f"{source} -> {target}: target là domain template - bị chặn để tránh ghi đè template")
+        # Blocks overwriting a template that's already live (the whole point
+        # of the guard - a template is the gold master other clones read
+        # from), but NOT a brand-new "<server>.wp-template.site" that
+        # doesn't exist yet - that's exactly how every template got created
+        # in the first place (clone-wpsite from site-trang.com, same
+        # server), so blocking unconditionally would make onboarding a new
+        # server's template impossible going forward.
+        if is_template_domain(target) and db.query(Domain).filter(Domain.domain == target).first():
+            errors.append(f"{source} -> {target}: target là domain template đã tồn tại - bị chặn để tránh ghi đè")
             continue
         source_server = p.source_server.strip() if p.source_server else None
         server, err = _resolve_domain_server(db, source, source_server)
