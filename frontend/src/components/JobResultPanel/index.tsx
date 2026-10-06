@@ -1,3 +1,4 @@
+import JobResultActions from '@/components/JobResultActions';
 import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from '@/utils/jobConstants';
 import { SUMMARY_KEY_LABELS, isErrorLikeStatus } from '@/utils/jobResult';
 import { DisconnectOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -25,9 +26,10 @@ const columnRank = (key: string) => {
   return 50;
 };
 
-// Plain factory (not a hook) so it can be called from inside the component
-// with a hook-resolved color, instead of hardcoding hex at module scope.
-const buildColumns = (rows: Record<string, any>[], emptyColor: string) => {
+// Shared between the Table columns and the export/copy headers below, so
+// "what you see" and "what you export" always list the same fields in the
+// same order.
+const buildKeys = (rows: Record<string, any>[]): string[] => {
   const keys: string[] = [];
   rows.forEach((row) => {
     if (row && typeof row === 'object') {
@@ -37,7 +39,12 @@ const buildColumns = (rows: Record<string, any>[], emptyColor: string) => {
     }
   });
   keys.sort((a, b) => columnRank(a) - columnRank(b));
+  return keys;
+};
 
+// Plain factory (not a hook) so it can be called from inside the component
+// with a hook-resolved color, instead of hardcoding hex at module scope.
+const buildColumns = (keys: string[], emptyColor: string) => {
   return keys.map((key) => ({
     title: key,
     dataIndex: key,
@@ -56,6 +63,15 @@ const buildColumns = (rows: Record<string, any>[], emptyColor: string) => {
       return String(value);
     },
   }));
+};
+
+// Plain-text version of the same value the Table cell renders above (minus
+// the '-' placeholder, which would otherwise show up as literal text in an
+// exported CSV/Sheet cell that's actually just empty).
+const cellToText = (value: any): string => {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 };
 
 /** Generic "what did this job actually produce" panel, shared by every page
@@ -132,14 +148,22 @@ const JobResultPanel: React.FC<{ job?: API.JobDetail; onRetry?: () => void }> = 
     if (!result.length) {
       return <Empty description="Không có dữ liệu kết quả" style={{ margin: '16px 0' }} />;
     }
+    const keys = buildKeys(result);
     return (
       <div style={{ marginTop: 16 }}>
         <Typography.Text type="secondary">{result.length} dòng kết quả</Typography.Text>
+        <div style={{ marginTop: 8 }}>
+          <JobResultActions
+            headers={keys}
+            rows={result.map((row) => keys.map((k) => cellToText(row[k])))}
+            filename={`job-${job.job_type}-${job.id}.csv`}
+          />
+        </div>
         <Table
           size="small"
           rowKey={(_, idx) => String(idx)}
           dataSource={result}
-          columns={buildColumns(result, token.colorTextQuaternary)}
+          columns={buildColumns(keys, token.colorTextQuaternary)}
           pagination={result.length > 20 ? { defaultPageSize: 20, showSizeChanger: true } : false}
           scroll={{ x: true }}
           style={{ marginTop: 8 }}
@@ -149,11 +173,27 @@ const JobResultPanel: React.FC<{ job?: API.JobDetail; onRetry?: () => void }> = 
   }
 
   if (result && typeof result === 'object' && Object.keys(result).length) {
+    // Only known dict shape today (cf_master_discover: {discovered, zones}) -
+    // "zones" is the one list-shaped field worth exporting; "discovered" is
+    // just a count, already shown as a Statistic above.
+    const zones = Array.isArray((result as any).zones) ? ((result as any).zones as any[]) : [];
+    const zoneKeys = zones.length ? buildKeys(zones) : [];
     return (
-      <div style={{ marginTop: 16, display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-        {Object.entries(result).map(([key, value]) => (
-          <Statistic key={key} title={SUMMARY_KEY_LABELS[key] || key} value={value as any} />
-        ))}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+          {Object.entries(result).map(([key, value]) => (
+            <Statistic key={key} title={SUMMARY_KEY_LABELS[key] || key} value={value as any} />
+          ))}
+        </div>
+        {zones.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <JobResultActions
+              headers={zoneKeys}
+              rows={zones.map((row) => zoneKeys.map((k) => cellToText(row[k])))}
+              filename={`job-${job.job_type}-${job.id}.csv`}
+            />
+          </div>
+        )}
       </div>
     );
   }

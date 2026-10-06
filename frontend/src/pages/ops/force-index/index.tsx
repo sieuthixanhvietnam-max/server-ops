@@ -1,5 +1,6 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { triggerCrawlSitemap, triggerForceIndex } from '@/services/serverOps/api';
@@ -191,6 +192,11 @@ const ForceIndex: React.FC = () => {
 
       {crawlResults && (
         <Card title={`Kết quả crawl sitemap (${crawlResults.length} domain)`}>
+          <JobResultActions
+            headers={['Domain', 'Số sitemap', 'Số URL', 'Lỗi']}
+            rows={crawlResults.map((r) => [r.domain, r.sitemap_count, r.url_count, r.error || ''])}
+            filename="force-index-sitemap-crawl.csv"
+          />
           <Table<API.SitemapCheck>
             size="small"
             rowKey="domain"
@@ -236,8 +242,20 @@ const ForceIndex: React.FC = () => {
           <JobLogPanel job={forceJob} />
 
           {(forceJob?.status === 'success' || forceJob?.status === 'failed') && (
+            <>
+            <JobResultActions
+              headers={['Domain', 'Số URL', 'Nhà cung cấp', 'Trạng thái', 'Ghi chú']}
+              rows={(forceJob.result as API.ForceIndexResult[]).map((r) => [
+                r.domain,
+                r.url_count,
+                SERVICE_LABELS[r.service] || r.service,
+                STATUS_LABELS[r.status] || r.status,
+                r.note || '',
+              ])}
+              filename="force-index-result.csv"
+            />
             <Table<API.ForceIndexResult>
-              style={{ marginTop: 16 }}
+              style={{ marginTop: 8 }}
               size="small"
               rowKey="domain"
               dataSource={forceJob.result}
@@ -258,6 +276,7 @@ const ForceIndex: React.FC = () => {
                 { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
               ]}
             />
+            </>
           )}
         </Card>
       )}

@@ -1,3 +1,4 @@
+import JobResultActions from '@/components/JobResultActions';
 import VerifyBadge from '@/components/VerifyBadge';
 import { Table, Tag, theme, Typography } from 'antd';
 import React from 'react';
@@ -15,6 +16,16 @@ const STATUS_COLORS: Record<string, string> = {
 const StatusTag: React.FC<{ status: string }> = ({ status }) => (
   <Tag color={STATUS_COLORS[status] || 'default'}>{status}</Tag>
 );
+
+// Flattens one VerifyInfo into the same short text across every export/copy
+// below - mirrors what VerifyBadge shows (status + ok/fail) without the tag
+// styling, which doesn't survive a CSV cell anyway.
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
+};
 
 const PluginListCell: React.FC<{ items: string[]; color: string }> = ({ items, color }) => {
   const { token } = theme.useToken();
@@ -40,11 +51,25 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
   if (!job || (job.status !== 'success' && job.status !== 'failed')) return null;
 
   if (job.job_type === 'plugin_check') {
+    const rows = job.result as API.PluginCheckResult[];
     return (
+      <div style={{ marginTop: 16 }}>
+      <JobResultActions
+        headers={['Domain', 'Server IP', 'Trạng thái', 'Số plugin', 'Plugin', 'Ghi chú']}
+        rows={rows.map((r) => [
+          r.domain,
+          r.ip,
+          r.status,
+          r.plugins.length,
+          r.plugins.map((p) => `${p.name} (${p.status}${p.version ? `, ${p.version}` : ''})`).join('; '),
+          r.note || '',
+        ])}
+        filename="plugin-check-result.csv"
+      />
       <Table<API.PluginCheckResult>
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 8 }}
         rowKey="domain"
-        dataSource={job.result}
+        dataSource={rows}
         pagination={false}
         expandable={{
           rowExpandable: (r) => r.plugins.length > 0,
@@ -74,6 +99,7 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
           { title: 'Ghi chú', dataIndex: 'note' },
         ]}
       />
+      </div>
     );
   }
 
@@ -82,11 +108,26 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
       job.job_type,
     )
   ) {
+    const rows = job.result as API.PluginToggleResult[];
     return (
+      <div style={{ marginTop: 16 }}>
+      <JobResultActions
+        headers={['Domain', 'Server IP', 'Trạng thái', 'Thành công', 'Thất bại', 'Xác minh', 'Ghi chú']}
+        rows={rows.map((r) => [
+          r.domain,
+          r.ip,
+          r.status,
+          (r.ok || []).join(', '),
+          (r.fail || []).join(', '),
+          verifyToText(r.verify),
+          r.note || '',
+        ])}
+        filename="plugin-toggle-result.csv"
+      />
       <Table<API.PluginToggleResult>
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 8 }}
         rowKey="domain"
-        dataSource={job.result}
+        dataSource={rows}
         pagination={false}
         columns={[
           { title: 'Domain', dataIndex: 'domain' },
@@ -98,15 +139,45 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
           { title: 'Ghi chú', dataIndex: 'note' },
         ]}
       />
+      </div>
     );
   }
 
   if (job.job_type === 'plugin_update') {
+    const rows = job.result as API.PluginUpdateResult[];
     return (
+      <div style={{ marginTop: 16 }}>
+      <JobResultActions
+        headers={[
+          'Domain',
+          'Server IP',
+          'Trạng thái',
+          'HTTP trước',
+          'HTTP sau',
+          'Rollback',
+          'Plugin',
+          'WP Core',
+          'Core version',
+          'Ghi chú',
+        ]}
+        rows={rows.map((r) => [
+          r.domain,
+          r.ip,
+          r.status,
+          r.http_before ?? '',
+          r.http_after ?? '',
+          r.status === 'ROLLBACK' ? (r.rolled_back ? 'Đã rollback' : 'Rollback thất bại') : '',
+          r.plugin_summary || '',
+          r.core_summary || '',
+          r.core_version || '',
+          r.note || '',
+        ])}
+        filename="plugin-update-result.csv"
+      />
       <Table<API.PluginUpdateResult>
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 8 }}
         rowKey="domain"
-        dataSource={job.result}
+        dataSource={rows}
         pagination={false}
         scroll={{ x: true }}
         columns={[
@@ -137,16 +208,36 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
           { title: 'Ghi chú', dataIndex: 'note' },
         ]}
       />
+      </div>
     );
   }
 
   if (job.job_type === 'mu_plugin_install') {
-    const anyUserCheck = (job.result as API.MuPluginInstallResult[]).some((r) => r.target_user_exists !== null);
+    const rows = job.result as API.MuPluginInstallResult[];
+    const anyUserCheck = rows.some((r) => r.target_user_exists !== null);
     return (
+      <div style={{ marginTop: 16 }}>
+      <JobResultActions
+        headers={[
+          'Domain',
+          'Server IP',
+          'Trạng thái',
+          ...(anyUserCheck ? ['User tồn tại?'] : []),
+          'Ghi chú',
+        ]}
+        rows={rows.map((r) => [
+          r.domain,
+          r.ip,
+          r.status,
+          ...(anyUserCheck ? [r.target_user_exists === null ? '' : r.target_user_exists ? 'Có' : 'Không'] : []),
+          r.note || '',
+        ])}
+        filename="mu-plugin-install-result.csv"
+      />
       <Table<API.MuPluginInstallResult>
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 8 }}
         rowKey="domain"
-        dataSource={job.result}
+        dataSource={rows}
         pagination={false}
         columns={[
           { title: 'Domain', dataIndex: 'domain' },
@@ -169,6 +260,7 @@ const PluginResultPanel: React.FC<{ job?: API.JobDetail }> = ({ job }) => {
           { title: 'Ghi chú', dataIndex: 'note' },
         ]}
       />
+      </div>
     );
   }
 

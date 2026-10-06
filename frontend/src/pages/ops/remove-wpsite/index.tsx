@@ -3,6 +3,7 @@ import DangerPopconfirm from '@/components/DangerPopconfirm';
 import VerifyBadge from '@/components/VerifyBadge';
 import DomainSelect from '@/components/DomainSelect';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { listDomains, triggerRemoveWpsite } from '@/services/serverOps/api';
@@ -32,6 +33,15 @@ const parseDomains = (text: string) =>
         .filter(Boolean),
     ),
   );
+
+// Flattens VerifyInfo into the same short text VerifyBadge shows, for
+// export/copy - the tag styling doesn't survive a CSV cell anyway.
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
+};
 
 const RemoveWpsite: React.FC = () => {
   const { message } = App.useApp();
@@ -233,9 +243,21 @@ const RemoveWpsite: React.FC = () => {
         <JobLogPanel job={job} />
 
         {(job?.status === 'success' || job?.status === 'failed') && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Server IP', 'Trạng thái', 'Xác minh', 'Ghi chú']}
+            rows={(job.result as API.RemoveWpsiteResult[]).map((r) => [
+              r.domain,
+              r.ip,
+              STATUS_LABELS[r.status] || r.status,
+              verifyToText(r.verify),
+              r.note || '',
+            ])}
+            filename="remove-wpsite-result.csv"
+          />
           <Table<API.RemoveWpsiteResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="domain"
             dataSource={job.result}
             pagination={false}
@@ -263,6 +285,7 @@ const RemoveWpsite: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {job?.status === 'success' && hasRemovedOk && (

@@ -3,14 +3,13 @@ import DangerPopconfirm from '@/components/DangerPopconfirm';
 import DomainSelect from '@/components/DomainSelect';
 import VerifyBadge from '@/components/VerifyBadge';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { listDomains, triggerChangeWppass } from '@/services/serverOps/api';
-import { copyText } from '@/utils/clipboard';
-import { CopyOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { useLocation } from '@umijs/max';
-import { Alert, App, Button, Card, Checkbox, Input, Segmented, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Checkbox, Input, Segmented, Select, Table, Tag, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 
 const { TextArea } = Input;
@@ -19,6 +18,15 @@ const STATUS_LABELS: Record<string, string> = {
   OK: 'Đã đổi',
   DRYRUN: 'Dry-run',
   FAIL: 'Thất bại',
+};
+
+// Flattens VerifyInfo into the same short text VerifyBadge shows, for
+// export/copy - the tag styling doesn't survive a CSV cell anyway.
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
 };
 
 const parseDomains = (text: string) =>
@@ -121,26 +129,6 @@ const ChangeWppass: React.FC = () => {
   };
 
   const isBusy = job?.status === 'running' || job?.status === 'pending';
-
-  // Tab-separated (not comma) so pasting into Google Sheets/Excel lands as
-  // real columns instead of one blob per row - same convention as every
-  // other bulk-copy in this app (see utils/clipboard.ts).
-  const handleCopyResults = () => {
-    const rows = (job?.result as API.ChangeWppassResult[] | undefined) || [];
-    if (!rows.length) return;
-    const header = ['Domain', 'Server', 'Admin user', 'Trạng thái', 'Mật khẩu mới', 'Ghi chú'];
-    const lines = [header, ...rows.map((r) => [
-      r.domain,
-      r.server_name,
-      r.admin,
-      STATUS_LABELS[r.status] || r.status,
-      r.new_password || '',
-      r.note,
-    ])]
-      .map((cols) => cols.join('\t'))
-      .join('\n');
-    copyText(lines, `Đã copy ${rows.length} dòng kết quả`);
-  };
 
   const clearCache = () => {
     setMode('select');
@@ -260,11 +248,19 @@ const ChangeWppass: React.FC = () => {
 
         {(job?.status === 'success' || job?.status === 'failed') && (
           <>
-            <Space style={{ marginTop: 16 }}>
-              <Button icon={<CopyOutlined />} onClick={handleCopyResults}>
-                Copy kết quả
-              </Button>
-            </Space>
+            <JobResultActions
+              headers={['Domain', 'Server', 'Admin user', 'Trạng thái', 'Mật khẩu mới', 'Xác minh', 'Ghi chú']}
+              rows={(job.result as API.ChangeWppassResult[]).map((r) => [
+                r.domain,
+                r.server_name,
+                r.admin,
+                STATUS_LABELS[r.status] || r.status,
+                r.new_password || '',
+                verifyToText(r.verify),
+                r.note || '',
+              ])}
+              filename="change-wppass-result.csv"
+            />
             <Table<API.ChangeWppassResult>
               style={{ marginTop: 8 }}
               rowKey="domain"

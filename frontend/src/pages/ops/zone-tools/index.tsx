@@ -1,6 +1,7 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import {
@@ -271,9 +272,21 @@ const ZoneTools: React.FC = () => {
         <JobLogPanel job={job} />
 
         {(job?.status === 'success' || job?.status === 'failed') && action === 'check_ip' && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'IP', 'Proxy (CF)', 'Trạng thái', 'Ghi chú']}
+            rows={(job.result as API.CheckIpResult[]).map((r) => [
+              r.domain,
+              r.ip || '',
+              r.proxied === null ? '' : r.proxied ? 'Bật' : 'Tắt',
+              CHECK_IP_STATUS_LABELS[r.status] || r.status,
+              r.note || '',
+            ])}
+            filename="zone-tools-check-ip.csv"
+          />
           <Table<API.CheckIpResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="domain"
             dataSource={job.result}
             pagination={false}
@@ -298,12 +311,25 @@ const ZoneTools: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {(job?.status === 'success' || job?.status === 'failed') && action === 'check_ns' && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Trạng thái', 'NS Cloudflare', 'NS thực tế (DNS)', 'Ghi chú']}
+            rows={(job.result as API.CheckNsResult[]).map((r) => [
+              r.domain,
+              CHECK_NS_STATUS_LABELS[r.status] || r.status,
+              r.ns_cf?.join(', ') || '',
+              r.ns_live?.join(', ') || '',
+              r.note || '',
+            ])}
+            filename="zone-tools-check-ns.csv"
+          />
           <Table<API.CheckNsResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="domain"
             dataSource={job.result}
             pagination={false}
@@ -325,12 +351,19 @@ const ZoneTools: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {(job?.status === 'success' || job?.status === 'failed') && action === 'change_ip' && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Trạng thái', 'Ghi chú']}
+            rows={(job.result as API.CfChangeIpResult[]).map((r) => [r.domain, CHANGE_IP_STATUS_LABELS[r.status] || r.status, r.note || ''])}
+            filename="zone-tools-change-ip.csv"
+          />
           <Table<API.CfChangeIpResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="domain"
             dataSource={job.result}
             pagination={false}
@@ -348,12 +381,19 @@ const ZoneTools: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {(job?.status === 'success' || job?.status === 'failed') && action === 'origin_port' && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Trạng thái', 'Ghi chú']}
+            rows={(job.result as API.CfOriginPortResult[]).map((r) => [r.domain, ORIGIN_PORT_STATUS_LABELS[r.status] || r.status, r.note || ''])}
+            filename="zone-tools-origin-port.csv"
+          />
           <Table<API.CfOriginPortResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="domain"
             dataSource={job.result}
             pagination={false}
@@ -371,12 +411,19 @@ const ZoneTools: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {(job?.status === 'success' || job?.status === 'failed') && action === 'purge_cache' && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Trạng thái', 'Ghi chú']}
+            rows={(job.result as API.CfPurgeCacheResult[]).map((r) => [r.domain, PURGE_CACHE_STATUS_LABELS[r.status] || r.status, r.note || ''])}
+            filename="zone-tools-purge-cache.csv"
+          />
           <Table<API.CfPurgeCacheResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="domain"
             dataSource={job.result}
             pagination={false}
@@ -394,6 +441,7 @@ const ZoneTools: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
       </Card>
     </PageContainer>

@@ -2,6 +2,7 @@ import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import VerifyBadge from '@/components/VerifyBadge';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { listDomains, triggerCfRedirect } from '@/services/serverOps/api';
@@ -45,6 +46,15 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const emptyRow = (): Row => ({ domain: '', target: '' });
+
+// Flattens VerifyInfo into the same short text VerifyBadge shows, for
+// export/copy - the tag styling doesn't survive a CSV cell anyway.
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
+};
 
 // Shared by both modes below - stated once here instead of repeated inside
 // each mode's alert text, so the two copies can't drift out of sync.
@@ -407,8 +417,21 @@ const CfRedirect: React.FC = () => {
                 </Button>
               </div>
             )}
+            <JobResultActions
+              headers={['Domain', 'Chế độ', 'Target rule (Cloudflare)', 'Trạng thái', 'Ghi chú', 'Redirect thật', 'Sitemap đích']}
+              rows={(job.result as API.CfRedirectResult[]).map((r) => [
+                r.domain,
+                r.mode === 'url_to_url' ? 'URL → URL' : 'URL → Homepage',
+                r.target_url,
+                STATUS_LABELS[r.status] || r.status,
+                r.note || '',
+                verifyToText(r.verify),
+                r.sitemap_check ? (r.sitemap_check.error || `${r.sitemap_check.url_count} URL`) : '',
+              ])}
+              filename="cf-redirect-result.csv"
+            />
             <Table<API.CfRedirectResult>
-              style={{ marginTop: 16 }}
+              style={{ marginTop: 8 }}
               rowKey="domain"
               dataSource={job.result}
               pagination={false}

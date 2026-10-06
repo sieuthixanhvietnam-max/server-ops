@@ -1,5 +1,6 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { listServers, triggerCheckHealth } from '@/services/serverOps/api';
@@ -75,9 +76,25 @@ const CheckHealth: React.FC = () => {
         <JobLogPanel job={job} />
 
         {(job?.status === 'success' || job?.status === 'failed') && (
+          <>
+          <JobResultActions
+            headers={['Server', 'IP', 'Trạng thái', 'CPU', 'RAM', 'Disk', 'Domains', 'Uptime', 'Ghi chú']}
+            rows={(job.result as API.CheckHealthResult[]).map((r) => [
+              r.server_name,
+              r.ip,
+              HEALTH_STATUS_LABELS[r.status] || r.status,
+              r.cpu ? `${r.cpu}%` : '',
+              r.ram_pct ? `${r.ram_pct}%` : '',
+              r.disk_pct ? `${r.disk_pct}%` : '',
+              r.domains ?? '',
+              r.uptime || '',
+              r.note || '',
+            ])}
+            filename="check-health-result.csv"
+          />
           <Table<API.CheckHealthResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="server_name"
             dataSource={job.result}
             pagination={false}
@@ -100,6 +117,7 @@ const CheckHealth: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
       </Card>
     </PageContainer>

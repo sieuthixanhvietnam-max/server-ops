@@ -3,6 +3,7 @@ import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import DomainSelect from '@/components/DomainSelect';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import VerifyBadge from '@/components/VerifyBadge';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
@@ -28,6 +29,15 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const formatKb = (kb: number) => (kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
+
+// Flattens VerifyInfo into the same short text VerifyBadge shows, for
+// export/copy - the tag styling doesn't survive a CSV cell anyway.
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
+};
 
 const WpMaintenance: React.FC = () => {
   const { message } = App.useApp();
@@ -328,8 +338,14 @@ const WpMaintenance: React.FC = () => {
         <JobLogPanel job={job} />
 
         {cacheResults && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Server IP', 'Trạng thái', 'Xác minh', 'Ghi chú']}
+            rows={cacheResults.map((r) => [r.domain, r.ip, STATUS_LABELS[r.status] || r.status, verifyToText(r.verify), r.note || ''])}
+            filename="wp-maintenance-clear-cache.csv"
+          />
           <Table<API.MaintenanceClearCacheResult>
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             size="small"
             rowKey="domain"
             dataSource={cacheResults}
@@ -346,11 +362,18 @@ const WpMaintenance: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {commentResults && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Server IP', 'Trạng thái', 'Số comment', 'Ghi chú']}
+            rows={commentResults.map((r) => [r.domain, r.ip, STATUS_LABELS[r.status] || r.status, r.comment_count, r.note || ''])}
+            filename="wp-maintenance-clear-comments.csv"
+          />
           <Table<API.MaintenanceClearCommentsResult>
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             size="small"
             rowKey="domain"
             dataSource={commentResults}
@@ -363,11 +386,26 @@ const WpMaintenance: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {permissionResults && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Server IP', 'Trạng thái', 'File sai chủ (trước)', 'File sai chủ (sau)', 'Xác minh', 'Ghi chú']}
+            rows={permissionResults.map((r) => [
+              r.domain,
+              r.ip,
+              STATUS_LABELS[r.status] || r.status,
+              r.before,
+              r.after,
+              verifyToText(r.verify),
+              r.note || '',
+            ])}
+            filename="wp-maintenance-fix-permissions.csv"
+          />
           <Table<API.MaintenanceFixPermissionsResult>
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             size="small"
             rowKey="domain"
             dataSource={permissionResults}
@@ -386,11 +424,24 @@ const WpMaintenance: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
 
         {junkResults && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Server IP', 'Trạng thái', 'Dung lượng', 'Ghi chú']}
+            rows={junkResults.map((r) => [
+              r.domain,
+              r.ip,
+              STATUS_LABELS[r.status] || r.status,
+              `${formatKb(r.freed_kb)}${r.status === 'DRYRUN' ? ' sẽ được giải phóng' : ' đã giải phóng'}`,
+              r.note || '',
+            ])}
+            filename="wp-maintenance-clean-junk.csv"
+          />
           <Table<API.MaintenanceCleanJunkResult>
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             size="small"
             rowKey="domain"
             dataSource={junkResults}
@@ -407,6 +458,7 @@ const WpMaintenance: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
       </Card>
     </PageContainer>

@@ -3,6 +3,7 @@ import DangerPopconfirm from '@/components/DangerPopconfirm';
 import DomainSelect from '@/components/DomainSelect';
 import JobLogPanel from '@/components/JobLogPanel';
 import JobProgressBar from '@/components/JobProgressBar';
+import JobResultActions from '@/components/JobResultActions';
 import VerifyBadge from '@/components/VerifyBadge';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
@@ -26,6 +27,15 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const emptyRow = (): Row => ({ domain: '' });
+
+// Flattens VerifyInfo into the same short text VerifyBadge shows, for
+// export/copy - the tag styling doesn't survive a CSV cell anyway.
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
+};
 
 /** Nút "Xoá nguồn" cho 1 dòng kết quả - tách hoàn toàn khỏi job migrate,
  * tự trigger + tự poll job remove-wpsite của riêng nó (tái dùng nguyên
@@ -152,6 +162,12 @@ const BulkRemoveSourcePanel: React.FC<{
           )}
           <JobLogPanel job={job} />
           {(job?.status === 'success' || job?.status === 'failed') && (
+            <>
+            <JobResultActions
+              headers={['Domain', 'Server IP', 'Trạng thái', 'Ghi chú']}
+              rows={(job.result as API.RemoveWpsiteResult[]).map((r) => [r.domain, r.ip, r.status, r.note || ''])}
+              filename="migrate-bulk-remove-source-result.csv"
+            />
             <Table<API.RemoveWpsiteResult>
               size="small"
               style={{ marginTop: 8 }}
@@ -171,6 +187,7 @@ const BulkRemoveSourcePanel: React.FC<{
                 { title: 'Ghi chú', dataIndex: 'note' },
               ]}
             />
+            </>
           )}
         </>
       )}
@@ -618,8 +635,21 @@ const MigrateWpsite: React.FC = () => {
                 }))
               }
             />
+            <JobResultActions
+              headers={['Domain', 'Server nguồn', 'Server đích', 'Trạng thái', 'DNS (Cloudflare)', 'Xác minh', 'Ghi chú']}
+              rows={(job.result as API.MigrateWpsiteResult[]).map((r) => [
+                r.domain,
+                r.source_ip,
+                r.dest_ip,
+                STATUS_LABELS[r.status] || r.status,
+                r.cf_dns || '',
+                verifyToText(r.verify),
+                r.note || '',
+              ])}
+              filename="migrate-wpsite-result.csv"
+            />
             <Table<API.MigrateWpsiteResult>
-              style={{ marginTop: 16 }}
+              style={{ marginTop: 8 }}
               size="small"
               rowKey="domain"
               dataSource={job.result}

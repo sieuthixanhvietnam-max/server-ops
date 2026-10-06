@@ -1,6 +1,7 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { triggerCfFirewallUpdate } from '@/services/serverOps/api';
@@ -134,6 +135,15 @@ const CfFirewall: React.FC = () => {
         {(job?.status === 'success' || job?.status === 'failed') && (
           <>
             <Typography.Text type="secondary">{job.result?.length || 0} dòng kết quả</Typography.Text>
+            <JobResultActions
+              headers={['Domain', 'Trạng thái', 'Ghi chú']}
+              rows={(job.result as API.CfFirewallUpdateResult[]).map((r) => [
+                r.domain,
+                STATUS_LABELS[r.status] || r.status,
+                r.note || '',
+              ])}
+              filename="cf-firewall-update-result.csv"
+            />
             <Table<API.CfFirewallUpdateResult>
               size="small"
               style={{ marginTop: 8 }}

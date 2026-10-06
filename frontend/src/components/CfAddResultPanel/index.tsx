@@ -1,3 +1,4 @@
+import JobResultActions from '@/components/JobResultActions';
 import { copyText } from '@/utils/clipboard';
 import { buildNsClusters, type NsCluster } from '@/utils/nsClusters';
 import {
@@ -80,23 +81,30 @@ const CfAddResultPanel: React.FC<{ result: API.CfAddResult[] }> = ({ result }) =
 
   if (isDryRun) {
     return (
-      <Table<API.CfAddResult>
-        style={{ marginTop: 16 }}
-        size="small"
-        rowKey="domain"
-        dataSource={result}
-        pagination={false}
-        columns={[
-          { title: 'Domain', dataIndex: 'domain' },
-          { title: 'IP', dataIndex: 'ip' },
-          {
-            title: 'Trạng thái',
-            dataIndex: 'status',
-            render: (v) => <Tag color={STATUS_COLORS[v] || 'default'}>{STATUS_LABELS[v] || v}</Tag>,
-          },
-          { title: 'Ghi chú', dataIndex: 'note' },
-        ]}
-      />
+      <div style={{ marginTop: 16 }}>
+        <JobResultActions
+          headers={['Domain', 'IP', 'Trạng thái', 'Ghi chú']}
+          rows={result.map((r) => [r.domain, r.ip || '', STATUS_LABELS[r.status] || r.status, r.note || ''])}
+          filename="cf-add-dryrun.csv"
+        />
+        <Table<API.CfAddResult>
+          style={{ marginTop: 8 }}
+          size="small"
+          rowKey="domain"
+          dataSource={result}
+          pagination={false}
+          columns={[
+            { title: 'Domain', dataIndex: 'domain' },
+            { title: 'IP', dataIndex: 'ip' },
+            {
+              title: 'Trạng thái',
+              dataIndex: 'status',
+              render: (v) => <Tag color={STATUS_COLORS[v] || 'default'}>{STATUS_LABELS[v] || v}</Tag>,
+            },
+            { title: 'Ghi chú', dataIndex: 'note' },
+          ]}
+        />
+      </div>
     );
   }
 
@@ -112,7 +120,19 @@ const CfAddResultPanel: React.FC<{ result: API.CfAddResult[] }> = ({ result }) =
 
   return (
     <div style={{ marginTop: 16 }}>
-      <Space wrap style={{ marginBottom: 12 }}>
+      <JobResultActions
+        headers={['Domain', 'Trạng thái', 'Account', 'Zone ID', 'Nameservers', 'Ghi chú']}
+        rows={result.map((r) => [
+          r.domain,
+          STATUS_LABELS[r.status] || r.status,
+          r.account_label || '',
+          r.zone_id || '',
+          (r.nameservers || []).join(', '),
+          r.note || '',
+        ])}
+        filename="cf-add-result.csv"
+      />
+      <Space wrap style={{ marginTop: 8, marginBottom: 12 }}>
         {counts.added > 0 && <Tag color="success">{counts.added} đã thêm</Tag>}
         {counts.reconfigured > 0 && <Tag color="cyan">{counts.reconfigured} đã cấu hình lại</Tag>}
         {counts.existing > 0 && <Tag color="gold">{counts.existing} đã có sẵn</Tag>}
@@ -190,16 +210,23 @@ const CfAddResultPanel: React.FC<{ result: API.CfAddResult[] }> = ({ result }) =
       )}
 
       {errors.length > 0 && (
-        <Table<API.CfAddResult>
-          size="small"
-          rowKey="domain"
-          dataSource={errors}
-          pagination={false}
-          columns={[
-            { title: 'Domain', dataIndex: 'domain' },
-            { title: 'Lỗi', dataIndex: 'note' },
-          ]}
-        />
+        <div>
+          <JobResultActions
+            headers={['Domain', 'Lỗi']}
+            rows={errors.map((r) => [r.domain, r.note || ''])}
+            filename="cf-add-errors.csv"
+          />
+          <Table<API.CfAddResult>
+            size="small"
+            rowKey="domain"
+            dataSource={errors}
+            pagination={false}
+            columns={[
+              { title: 'Domain', dataIndex: 'domain' },
+              { title: 'Lỗi', dataIndex: 'note' },
+            ]}
+          />
+        </div>
       )}
     </div>
   );

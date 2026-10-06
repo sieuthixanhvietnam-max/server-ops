@@ -1,6 +1,7 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import VerifyBadge from '@/components/VerifyBadge';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
@@ -12,6 +13,15 @@ import { Alert, App, Button, Card, Input, Select, Space, Table, Tag, Tooltip, Ty
 import React, { useEffect, useMemo, useState } from 'react';
 
 const STATUS_LABELS: Record<string, string> = { OK: 'Đã restore', DRYRUN: 'Dry-run OK', FAIL: 'Thất bại' };
+
+// Flattens VerifyInfo into the same short text VerifyBadge shows, for
+// export/copy - the tag styling doesn't survive a CSV cell anyway.
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
+};
 
 const formatBytes = (bytes: number) => {
   if (!bytes) return '0 B';
@@ -67,8 +77,23 @@ const RestoreJobCard: React.FC<{ jobId: number }> = ({ jobId }) => {
     <Card size="small" style={{ marginTop: 12 }}>
       <JobLogPanel job={job} />
       {results && (
+        <>
+        <JobResultActions
+          headers={['Domain', 'Trạng thái', 'Ngày backup', 'Database', 'Số bảng', 'Site URL', 'Xác minh', 'Ghi chú']}
+          rows={results.map((r) => [
+            r.domain,
+            STATUS_LABELS[r.status] || r.status,
+            r.date_used || '',
+            r.db_name || '',
+            r.table_count ?? '',
+            r.siteurl || '',
+            verifyToText(r.verify),
+            r.note || '',
+          ])}
+          filename="restore-wpsite-result.csv"
+        />
         <Table<API.RestoreWpsiteResult>
-          style={{ marginTop: 16 }}
+          style={{ marginTop: 8 }}
           size="small"
           rowKey="domain"
           dataSource={results}
@@ -92,6 +117,7 @@ const RestoreJobCard: React.FC<{ jobId: number }> = ({ jobId }) => {
             { title: 'Ghi chú', dataIndex: 'note' },
           ]}
         />
+        </>
       )}
     </Card>
   );

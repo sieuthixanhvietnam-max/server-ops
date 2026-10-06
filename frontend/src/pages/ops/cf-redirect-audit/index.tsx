@@ -1,11 +1,10 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { triggerCfAuditRedirects, triggerCfRedirectInventory } from '@/services/serverOps/api';
-import { exportToCsv } from '@/utils/exportCsv';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
-import { DownloadOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { Alert, App, Button, Card, Empty, Segmented, Space, Table, Tag, Typography } from 'antd';
 import React, { useMemo, useState } from 'react';
@@ -59,14 +58,6 @@ const CfRedirectAudit: React.FC = () => {
       }),
     [inventoryRows, targetCounts],
   );
-
-  const exportInventory = () => {
-    exportToCsv(
-      `cf-redirects-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['domain', 'target', 'target_domain', 'code', 'zone_id'],
-      sortedInventoryRows.map((r) => [r.domain, r.target, r.target_domain, r.code, r.zone_id]),
-    );
-  };
 
   const clearCache = () => {
     setMode('anomalies');
@@ -125,6 +116,16 @@ const CfRedirectAudit: React.FC = () => {
           (job.result?.length ? (
             <>
               <Typography.Text type="secondary">{job.result.length} zone có vấn đề</Typography.Text>
+              <JobResultActions
+                headers={['Domain', 'Số rule redirect', 'Vấn đề', 'Target (Cloudflare)']}
+                rows={(job.result as API.CfAuditRedirectFinding[]).map((r) => [
+                  r.domain,
+                  r.rule_count,
+                  r.issues || '',
+                  r.targets || '',
+                ])}
+                filename="cf-redirect-audit-anomalies.csv"
+              />
               <Table<API.CfAuditRedirectFinding>
                 style={{ marginTop: 8 }}
                 size="small"
@@ -161,9 +162,17 @@ const CfRedirectAudit: React.FC = () => {
                 }}
               >
                 <Typography.Text type="secondary">{inventoryRows.length} redirect rule</Typography.Text>
-                <Button icon={<DownloadOutlined />} onClick={exportInventory}>
-                  Xuất CSV
-                </Button>
+                <JobResultActions
+                  headers={['Domain đích', 'Số domain trỏ vào', 'Domain nguồn', 'Target', 'Mã redirect']}
+                  rows={sortedInventoryRows.map((r) => [
+                    r.target_domain,
+                    targetCounts.get(r.target_domain) || 0,
+                    r.domain,
+                    r.target,
+                    r.code,
+                  ])}
+                  filename={`cf-redirects-${new Date().toISOString().slice(0, 10)}.csv`}
+                />
               </div>
 
               {topTargets.length > 0 && (

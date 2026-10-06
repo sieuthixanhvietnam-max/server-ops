@@ -1,6 +1,7 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { triggerCfRedirectRemove } from '@/services/serverOps/api';
@@ -110,9 +111,19 @@ const CfRedirectRemove: React.FC = () => {
         <JobLogPanel job={job} />
 
         {(job?.status === 'success' || job?.status === 'failed') && (
+          <>
+          <JobResultActions
+            headers={['Domain', 'Trạng thái', 'Ghi chú']}
+            rows={(job.result as API.CfRedirectRemoveResult[]).map((r) => [
+              r.domain,
+              STATUS_LABELS[r.status] || r.status,
+              r.note || '',
+            ])}
+            filename="cf-redirect-remove-result.csv"
+          />
           <Table<API.CfRedirectRemoveResult>
             size="small"
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 8 }}
             rowKey="domain"
             dataSource={job.result}
             pagination={false}
@@ -140,6 +151,7 @@ const CfRedirectRemove: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
       </Card>
     </PageContainer>
