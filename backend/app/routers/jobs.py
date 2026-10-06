@@ -1795,12 +1795,14 @@ async def trigger_remove_backdoor_users(
     username: str = Depends(get_current_username),
 ):
     """Incident response for the wp2shell backdoor (CVE-2026-63030/
-    CVE-2026-60137) - deletes only the "chắc chắn" tier (username
-    `w2s_<hex>` or email ending `@wp2shell.local`, the tool's own published
-    signature), never the broader "khả nghi" (bare-hex, no wp2shell.local
-    marker) tier, which is a separate decision. Re-checks live via wp-cli
-    per domain, so it's safe to run against the whole inventory - a domain
-    with no match is simply a no-op."""
+    CVE-2026-60137) - deletes both tiers (see wp_security_ops.BACKDOOR_SCRIPT):
+    "chắc chắn" (username `w2s_<hex>` or email ending `@wp2shell.local`,
+    the tool's own published signature) and "nghi vấn" (bare 12-20 char
+    hex username, no wp2shell.local marker - same tool with the signature
+    dropped, per the session's 2026-10-06 investigation). Each deleted/
+    skipped entry is tagged with which tier matched. Re-checks live via
+    wp-cli per domain, so it's safe to run against the whole inventory -
+    a domain with no match is simply a no-op."""
     domains = sorted({d.strip().lower() for d in body.domains if d.strip()})
     if not domains:
         raise HTTPException(status_code=400, detail="domains list is empty")

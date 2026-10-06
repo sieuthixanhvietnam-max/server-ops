@@ -6,12 +6,16 @@ from app.ops import ssh_ops
 # Incident response for the wp2shell backdoor (CVE-2026-63030 / CVE-2026-60137):
 # the exploit itself is a WordPress CORE bug (patched via plugin_update's
 # `wp core update`, nothing to do with this file) that plants a persistent
-# administrator account as its backdoor. This only removes the ALREADY
-# "certain" tier of that account - username `w2s_<hex>` or email ending in
-# `@wp2shell.local`, the exact signature published for this tool. Deciding
-# whether to widen this to the "khả nghi" tier (bare-hex username, random-hex
-# @gmail.com email, no w2s_/wp2shell.local marker) is a separate step - not
-# done here.
+# administrator account as its backdoor. Covers 2 tiers, tagged separately
+# in the output so the audit trail says which signature matched:
+#   - "chac_chan" (certain): username `w2s_<hex>` or email ending
+#     `@wp2shell.local` - the tool's own published signature.
+#   - "nghi_van" (suspect): bare 12-20 char lowercase-hex username with no
+#     w2s_/wp2shell.local marker. Same tool with the signature dropped,
+#     most likely (same sites, timestamps right after the "chắc chắn"
+#     wave, same random-hex-local-part @gmail.com email style - see the
+#     session's 2026-10-06 investigation) - but less certain, hence the
+#     separate tag.
 #
 # Re-checks live via wp-cli at execution time rather than trusting a
 # point-in-time scan - safe to re-run on an already-cleaned domain (matches
@@ -50,15 +54,21 @@ if [[ ! -f "$PATH_WP/wp-load.php" ]]; then
 fi
 
 wp user list --role=administrator --path="$PATH_WP" --allow-root --fields=ID,user_login,user_email --format=csv 2>/dev/null | tail -n +2 | while IFS=, read -r id login email; do
+    reason=""
     if [[ "$login" =~ ^w2s_[0-9a-f]+$ ]] || [[ "$email" == *"@wp2shell.local" ]]; then
+        reason="chac_chan"
+    elif [[ "$login" =~ ^[0-9a-f]{12,20}$ ]]; then
+        reason="nghi_van"
+    fi
+    if [[ -n "$reason" ]]; then
         post_count=$(wp post list --author="$id" --post_status=any --format=count --path="$PATH_WP" --allow-root 2>/dev/null)
         if [[ -z "$post_count" ]]; then post_count=0; fi
         if [[ "$post_count" -gt 0 ]]; then
-            echo "SKIP|$login|$email|$post_count bai viet - can xem tay"
+            echo "SKIP|$login|$email|$reason|$post_count bai viet - can xem tay"
         elif wp user delete "$id" --yes --path="$PATH_WP" --allow-root >/dev/null 2>&1; then
-            echo "DELETED|$login|$email|"
+            echo "DELETED|$login|$email|$reason|"
         else
-            echo "FAIL|$login|$email|xoa khong thanh cong"
+            echo "FAIL|$login|$email|$reason|xoa khong thanh cong"
         fi
     fi
 done
@@ -76,7 +86,8 @@ def remove_backdoor_users(
     """entries: [{"domain", "ip", "profile", "server_name"}]. Returns, per
     entry: {"domain", "server_name", "ip", "status", "deleted": [...],
     "skipped": [...], "note"} - deleted/skipped are lists of
-    {"username", "email", "note"}."""
+    {"username", "email", "reason", "note"} ("reason" is "chac_chan" or
+    "nghi_van", see BACKDOOR_SCRIPT's header comment)."""
     results: list[dict | None] = [None] * len(entries)
 
     def _one(idx: int, e: dict) -> None:
@@ -120,16 +131,16 @@ def remove_backdoor_users(
         deleted, skipped = [], []
         for line in output.strip().splitlines():
             parts = line.split("|")
-            if len(parts) < 3:
+            if len(parts) < 4:
                 continue
-            kind, login, email = parts[0], parts[1], parts[2]
-            note = parts[3] if len(parts) > 3 else ""
+            kind, login, email, reason = parts[0], parts[1], parts[2], parts[3]
+            note = parts[4] if len(parts) > 4 else ""
             if kind == "DELETED":
-                deleted.append({"username": login, "email": email, "note": note})
+                deleted.append({"username": login, "email": email, "reason": reason, "note": note})
             elif kind == "SKIP":
-                skipped.append({"username": login, "email": email, "note": note})
+                skipped.append({"username": login, "email": email, "reason": reason, "note": note})
             elif kind == "FAIL":
-                skipped.append({"username": login, "email": email, "note": note or "xoá thất bại"})
+                skipped.append({"username": login, "email": email, "reason": reason, "note": note or "xoá thất bại"})
 
         if deleted or skipped:
             log(f"[ ok ] {label}: xoá {len(deleted)}, bỏ qua {len(skipped)}")
