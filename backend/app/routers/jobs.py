@@ -36,6 +36,7 @@ from app.ops import (
     wp_ops,
     wp_plugin_ops,
     wp_restore_ops,
+    wp_security_ops,
     wp_user_ops,
 )
 from app.ops.validation import is_template_domain, is_valid_domain, is_valid_ip, validate_domains
@@ -1775,6 +1776,49 @@ async def trigger_export_usernames(
         ctx.init_targets([e["domain"] for e in entries])
         return await asyncio.to_thread(
             wp_user_ops.get_admin_usernames, entries, ctx.log,
+            on_start=ctx.start_target, on_finish=ctx.finish_target,
+        )
+
+    launch_job(job.id, worker)
+    return {"job_id": job.id}
+
+
+class RemoveBackdoorUsersRequest(BaseModel):
+    domains: list[str]
+
+
+@router.post("/remove-backdoor-users")
+async def trigger_remove_backdoor_users(
+    body: RemoveBackdoorUsersRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_current_username),
+):
+    """Incident response for the wp2shell backdoor (CVE-2026-63030/
+    CVE-2026-60137) - deletes only the "chắc chắn" tier (username
+    `w2s_<hex>` or email ending `@wp2shell.local`, the tool's own published
+    signature), never the broader "khả nghi" (bare-hex, no wp2shell.local
+    marker) tier, which is a separate decision. Re-checks live via wp-cli
+    per domain, so it's safe to run against the whole inventory - a domain
+    with no match is simply a no-op."""
+    domains = sorted({d.strip().lower() for d in body.domains if d.strip()})
+    if not domains:
+        raise HTTPException(status_code=400, detail="domains list is empty")
+
+    rows = db.execute(select(Domain).where(Domain.domain.in_(domains))).scalars().all()
+    entries = [
+        {"domain": r.domain, "ip": r.server_ip, "profile": r.profile, "server_name": r.server_name}
+        for r in rows
+    ]
+    if not entries:
+        raise HTTPException(status_code=400, detail="No matching domains found in inventory")
+
+    job = create_job(db, "remove_backdoor_users", {"count": len(entries)}, username, get_client_ip(request))
+
+    async def worker(ctx):
+        ctx.init_targets([e["domain"] for e in entries])
+        return await asyncio.to_thread(
+            wp_security_ops.remove_backdoor_users, entries, ctx.log,
             on_start=ctx.start_target, on_finish=ctx.finish_target,
         )
 
