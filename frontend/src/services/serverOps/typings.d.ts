@@ -18,6 +18,15 @@ declare namespace API {
     note: string;
   };
 
+  type ExportUsernamesResult = {
+    domain: string;
+    server_name: string;
+    ip: string;
+    status: string;
+    usernames: string[];
+    note: string;
+  };
+
   type TemplateInfoResult = {
     domain: string;
     ip: string;

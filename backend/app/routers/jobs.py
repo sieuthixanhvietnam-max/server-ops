@@ -36,6 +36,7 @@ from app.ops import (
     wp_ops,
     wp_plugin_ops,
     wp_restore_ops,
+    wp_user_ops,
 )
 from app.ops.validation import is_template_domain, is_valid_domain, is_valid_ip, validate_domains
 from app.pic_service import suggest_cf_account_for_ip
@@ -1733,6 +1734,47 @@ async def trigger_migrate_wpsite(
             ctx.init_targets([e["domain"] for e in entries])
         return await asyncio.to_thread(
             wp_migrate_ops.migrate_wpsite, entries, ctx.log, body.dry_run,
+            on_start=ctx.start_target, on_finish=ctx.finish_target,
+        )
+
+    launch_job(job.id, worker)
+    return {"job_id": job.id}
+
+
+class ExportUsernamesRequest(BaseModel):
+    domains: list[str]
+
+
+@router.post("/export-usernames")
+async def trigger_export_usernames(
+    body: ExportUsernamesRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    username: str = Depends(get_current_username),
+):
+    """Live pull (SSH + WP-CLI, not from synced/manually-entered data) of
+    every administrator-role username per domain - for exporting a CSV of
+    WP admin logins. `domains` is usually every domain the caller's own
+    list/filter currently matches (Domains page), not necessarily the
+    entire inventory."""
+    domains = sorted({d.strip().lower() for d in body.domains if d.strip()})
+    if not domains:
+        raise HTTPException(status_code=400, detail="domains list is empty")
+
+    rows = db.execute(select(Domain).where(Domain.domain.in_(domains))).scalars().all()
+    entries = [
+        {"domain": r.domain, "ip": r.server_ip, "profile": r.profile, "server_name": r.server_name}
+        for r in rows
+    ]
+    if not entries:
+        raise HTTPException(status_code=400, detail="No matching domains found in inventory")
+
+    job = create_job(db, "export_usernames", {"count": len(entries)}, username, get_client_ip(request))
+
+    async def worker(ctx):
+        ctx.init_targets([e["domain"] for e in entries])
+        return await asyncio.to_thread(
+            wp_user_ops.get_admin_usernames, entries, ctx.log,
             on_start=ctx.start_target, on_finish=ctx.finish_target,
         )
 

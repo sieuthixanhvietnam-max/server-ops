@@ -387,6 +387,15 @@ export async function triggerMigrateWpsite(
   });
 }
 
+/** POST /api/jobs/export-usernames */
+export async function triggerExportUsernames(domains: string[], options?: { [key: string]: any }) {
+  return request<{ job_id: number }>('/api/jobs/export-usernames', {
+    method: 'POST',
+    data: { domains },
+    ...(options || {}),
+  });
+}
+
 /** POST /api/jobs/change-wppass */
 export async function triggerChangeWppass(
   domains: { domain: string; server_name?: string }[],

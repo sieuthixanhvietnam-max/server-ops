@@ -1,11 +1,15 @@
 import BatchListFilter from '@/components/BatchListFilter';
+import JobLogPanel from '@/components/JobLogPanel';
+import JobProgressBar from '@/components/JobProgressBar';
 import SiteCredentialCell from '@/components/SiteCredentialCell';
+import { useJobPolling } from '@/hooks/useJobPolling';
 import {
   listDomainProfiles,
   listDomainProviders,
   listDomains,
   listPics,
   listSiteCredentials,
+  triggerExportUsernames,
   triggerSync,
 } from '@/services/serverOps/api';
 import { copyText } from '@/utils/clipboard';
@@ -15,9 +19,9 @@ import { PROVIDER_COLORS } from '@/utils/providerColors';
 import { toSortParams } from '@/utils/tableSort';
 import type { ActionType, ProColumns, ProFormInstance } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { CopyOutlined, DownloadOutlined, DownOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { CopyOutlined, DownloadOutlined, DownOutlined, ReloadOutlined, SyncOutlined, UserOutlined } from '@ant-design/icons';
 import { history } from '@umijs/max';
-import { App, Button, Dropdown, Tag } from 'antd';
+import { App, Button, Dropdown, Modal, Tag } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -28,6 +32,10 @@ const DomainList: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [copying, setCopying] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [triggeringUsernames, setTriggeringUsernames] = useState(false);
+  const [usernamesJobId, setUsernamesJobId] = useState<number | undefined>(undefined);
+  const [usernamesModalOpen, setUsernamesModalOpen] = useState(false);
+  const usernamesJob = useJobPolling(usernamesJobId);
   const [providerOptions, setProviderOptions] = useState<{ label: string; value: string }[]>([]);
   const [profileOptions, setProfileOptions] = useState<{ label: string; value: string }[]>([]);
   const [picOptions, setPicOptions] = useState<{ label: string; value: string }[]>([]);
@@ -98,6 +106,41 @@ const DomainList: React.FC = () => {
       setExporting(false);
     }
   };
+
+  const handleExportUsernames = async () => {
+    setTriggeringUsernames(true);
+    try {
+      const data = await fetchAllMatchingFilter();
+      if (!data.length) {
+        message.warning('Không có domain nào để lấy username');
+        return;
+      }
+      const res = await triggerExportUsernames(data.map((d) => d.domain));
+      setUsernamesJobId(res.job_id);
+      setUsernamesModalOpen(true);
+    } catch (err: any) {
+      message.error(`Lỗi khi lấy username: ${err?.message || err}`);
+    } finally {
+      setTriggeringUsernames(false);
+    }
+  };
+
+  // Lấy trực tiếp qua SSH + WP-CLI (wp user list --role=administrator),
+  // KHÔNG phải từ SiteCredential (bảng đó chỉ có nhập tay, rất thiếu) - nên
+  // job này có thể mất 1-2 phút cho vài nghìn domain, xuất CSV ngay khi
+  // job xong thay vì phải bấm thêm 1 lần nữa.
+  useEffect(() => {
+    if (usernamesJob?.status === 'success') {
+      const rows = (usernamesJob.result || []) as API.ExportUsernamesResult[];
+      exportToCsv(
+        `usernames-${dayjs().format('YYYY-MM-DD')}.csv`,
+        ['Domain', 'Server', 'Server IP', 'Trạng thái', 'Username', 'Ghi chú'],
+        rows.map((r) => [r.domain, r.server_name, r.ip, r.status, r.usernames.join(', '), r.note]),
+      );
+      message.success(`Đã xuất ${rows.length} dòng`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usernamesJob?.status]);
 
   const goToOps = (path: string) => {
     const domains = Array.from(new Set(selectedDomains));
@@ -253,6 +296,9 @@ const DomainList: React.FC = () => {
           <Button key="export" icon={<DownloadOutlined />} loading={exporting} onClick={handleExportCsv}>
             Xuất CSV
           </Button>,
+          <Button key="export-usernames" icon={<UserOutlined />} loading={triggeringUsernames} onClick={handleExportUsernames}>
+            Xuất username (live)
+          </Button>,
           <Button
             key="duplicates"
             danger={duplicatesOnly}
@@ -276,6 +322,21 @@ const DomainList: React.FC = () => {
         }}
         columns={columns}
       />
+
+      <Modal
+        title="Đang lấy username từ server (SSH + WP-CLI)"
+        open={usernamesModalOpen}
+        onCancel={() => setUsernamesModalOpen(false)}
+        width={640}
+        footer={
+          <Button onClick={() => setUsernamesModalOpen(false)}>
+            {usernamesJob?.status === 'success' || usernamesJob?.status === 'failed' ? 'Đóng' : 'Ẩn (job vẫn chạy ngầm)'}
+          </Button>
+        }
+      >
+        <JobProgressBar job={usernamesJob} />
+        <JobLogPanel job={usernamesJob} />
+      </Modal>
     </PageContainer>
   );
 };
