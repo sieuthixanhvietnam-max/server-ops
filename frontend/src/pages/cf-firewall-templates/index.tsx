@@ -7,7 +7,22 @@ import {
 } from '@/services/serverOps/api';
 import { COMMON_BOT_PRESETS } from '@/utils/firewallBots';
 import { countryOptions } from '@/utils/countries';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  ApiOutlined,
+  CrownOutlined,
+  DeleteOutlined,
+  DesktopOutlined,
+  EditOutlined,
+  FilterOutlined,
+  GlobalOutlined,
+  LinkOutlined,
+  PlusOutlined,
+  RobotOutlined,
+  SafetyCertificateOutlined,
+  TagOutlined,
+  ThunderboltOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { useAccess } from '@umijs/max';
 import {
@@ -15,16 +30,19 @@ import {
   App,
   Button,
   Card,
+  Col,
   Form,
   Input,
   Modal,
   Popconfirm,
   Result,
+  Row,
   Select,
   Space,
+  Spin,
   Switch,
-  Table,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import dayjs from 'dayjs';
@@ -41,86 +59,130 @@ type TemplateFormValues = {
   block_bad_ua_enabled: boolean;
 };
 
+/** 1 settings-style row inside the "Rule nền & an toàn" tab - icon + title +
+ * description on the left, the actual Switch flush right. Plain div instead
+ * of a Card so it reads as one list of toggles, not a stack of boxes. */
+const ToggleRow: React.FC<{
+  name: string;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  disabled?: boolean;
+}> = ({ name, icon, title, desc, disabled }) => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 16,
+      padding: '10px 12px',
+      borderRadius: 8,
+      background: '#fafafa',
+      marginBottom: 8,
+    }}
+  >
+    <Space align="start">
+      <span style={{ fontSize: 16, color: '#1890ff', marginTop: 2 }}>{icon}</span>
+      <div>
+        <Typography.Text strong>{title}</Typography.Text>
+        <div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {desc}
+          </Typography.Text>
+        </div>
+      </div>
+    </Space>
+    <Form.Item name={name} valuePropName="checked" noStyle>
+      <Switch disabled={disabled} />
+    </Form.Item>
+  </div>
+);
+
 const TemplateFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) => (
   <>
     <Form.Item name="name" label="Tên template" rules={[{ required: true, message: 'Nhập tên template' }]}>
-      <Input placeholder="VD: Khắt khe cho niche cờ bạc" />
-    </Form.Item>
-    <Form.Item
-      name="countries_blocked"
-      label="Chặn quốc gia"
-    >
-      <Select
-        mode="multiple"
-        showSearch
-        optionFilterProp="label"
-        placeholder="Chọn quốc gia cần chặn..."
-        options={countryOptions()}
-      />
-    </Form.Item>
-    <Form.Item
-      name="blocked_user_agents"
-      label="Chặn bot theo tên (user-agent)"
-      tooltip='Khớp theo chuỗi con trong User-Agent (không phân biệt hoa/thường). Bot như AhrefsBot tự nhận UA chứa "Mozilla" nên rule chặn UA-không-giống-browser không bắt được, cần chặn riêng ở đây.'
-    >
-      <Select mode="tags" placeholder="Nhập hoặc chọn nhanh bot phổ biến bên dưới..." tokenSeparators={[',']} />
-    </Form.Item>
-    <Form.Item label=" " colon={false}>
-      <Space wrap>
-        {COMMON_BOT_PRESETS.map((b) => (
-          <AddPresetButton key={b.value} label={b.label} value={b.value} />
-        ))}
-      </Space>
-    </Form.Item>
-    <Form.Item name="blocked_paths" label="Chặn path (URL chứa chuỗi này)">
-      <Select mode="tags" placeholder="VD: xmlrpc.php" tokenSeparators={[',']} />
-    </Form.Item>
-    <Form.Item
-      name="bot_fight_mode"
-      label="Bot Fight Mode"
-      valuePropName="checked"
-      tooltip="Setting riêng của Cloudflare ở cấp zone (khác hẳn các rule ở trên) - tự động chặn/challenge traffic giống bot mà Cloudflare tự nhận diện."
-    >
-      <Switch />
+      <Input placeholder="VD: Khắt khe cho niche cờ bạc" prefix={<TagOutlined style={{ color: '#bfbfbf' }} />} />
     </Form.Item>
 
-    <Form.Item label="3 rule nền">
-      <Alert
-        type="warning"
-        showIcon
-        message={
-          isDefault
-            ? 'Template mặc định phải luôn giữ đủ 3 rule nền - không tắt được ở đây.'
-            : 'Tắt bất kỳ rule nào dưới đây có thể khiến rule chặn quốc gia/bot/path phía trên tự chặn nhầm IP whitelist hoặc Googlebot - chỉ tắt khi chắc chắn cần.'
-        }
-        style={{ marginBottom: 8 }}
-      />
-      <Space direction="vertical" size={4}>
+    <Row gutter={24}>
+      <Col span={12}>
+        <Typography.Title level={5} style={{ marginTop: 0 }}>
+          <FilterOutlined /> Chặn theo điều kiện
+        </Typography.Title>
+
+        <Form.Item name="countries_blocked" label={<Space size={4}><GlobalOutlined />Chặn quốc gia</Space>}>
+          <Select
+            mode="multiple"
+            showSearch
+            optionFilterProp="label"
+            placeholder="Chọn quốc gia cần chặn..."
+            options={countryOptions()}
+          />
+        </Form.Item>
         <Form.Item
-          name="skip_safety_enabled"
-          valuePropName="checked"
-          noStyle
-          tooltip="Bỏ qua mọi rule chặn bên dưới nếu: path chứa /wp-json/, HOẶC là bot đã xác minh, HOẶC IP nằm trong Whitelist IP, HOẶC ASN là Google."
+          name="blocked_user_agents"
+          label={<Space size={4}><RobotOutlined />Chặn bot theo tên (user-agent)</Space>}
+          tooltip='Khớp theo chuỗi con trong User-Agent (không phân biệt hoa/thường). Bot như AhrefsBot tự nhận UA chứa "Mozilla" nên rule chặn UA-không-giống-browser không bắt được, cần chặn riêng ở đây.'
         >
-          <Space>
-            <Switch disabled={isDefault} />
-            <Typography.Text>Skip-list an toàn (whitelist IP / bot xác minh / Google ASN / wp-json)</Typography.Text>
+          <Select mode="tags" placeholder="Nhập hoặc chọn nhanh bot phổ biến bên dưới..." tokenSeparators={[',']} />
+        </Form.Item>
+        <Form.Item label=" " colon={false} style={{ marginTop: -16 }}>
+          <Space wrap>
+            {COMMON_BOT_PRESETS.map((b) => (
+              <AddPresetButton key={b.value} label={b.label} value={b.value} />
+            ))}
           </Space>
         </Form.Item>
-        <Form.Item name="block_bad_ports_enabled" valuePropName="checked" noStyle>
-          <Space>
-            <Switch disabled={isDefault} />
-            <Typography.Text>Chặn port khác 80/443</Typography.Text>
-          </Space>
+        <Form.Item name="blocked_paths" label={<Space size={4}><LinkOutlined />Chặn path (URL chứa chuỗi này)</Space>}>
+          <Select mode="tags" placeholder="VD: xmlrpc.php" tokenSeparators={[',']} />
         </Form.Item>
-        <Form.Item name="block_bad_ua_enabled" valuePropName="checked" noStyle>
-          <Space>
-            <Switch disabled={isDefault} />
-            <Typography.Text>Chặn User-Agent không giống browser thật (rỗng, hoặc không chứa "mozilla"/"opera")</Typography.Text>
-          </Space>
+        <Form.Item
+          name="bot_fight_mode"
+          label={<Space size={4}><ThunderboltOutlined />Bot Fight Mode</Space>}
+          valuePropName="checked"
+          tooltip="Setting riêng của Cloudflare ở cấp zone (khác hẳn các rule ở trên) - tự động chặn/challenge traffic giống bot mà Cloudflare tự nhận diện."
+        >
+          <Switch />
         </Form.Item>
-      </Space>
-    </Form.Item>
+      </Col>
+
+      <Col span={12}>
+        <Typography.Title level={5} style={{ marginTop: 0 }}>
+          <SafetyCertificateOutlined /> Rule nền &amp; an toàn
+        </Typography.Title>
+        <Alert
+          type={isDefault ? 'info' : 'warning'}
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={
+            isDefault
+              ? 'Template mặc định phải luôn giữ đủ 3 rule nền - không tắt được ở đây.'
+              : 'Tắt bất kỳ rule nào dưới đây có thể khiến rule chặn quốc gia/bot/path bên trái tự chặn nhầm IP whitelist hoặc Googlebot.'
+          }
+        />
+        <ToggleRow
+          name="skip_safety_enabled"
+          icon={<SafetyCertificateOutlined />}
+          title="Skip-list an toàn"
+          desc="Bỏ qua mọi rule chặn nếu: path chứa /wp-json/, HOẶC là bot đã xác minh, HOẶC IP nằm trong Whitelist IP, HOẶC ASN là Google."
+          disabled={isDefault}
+        />
+        <ToggleRow
+          name="block_bad_ports_enabled"
+          icon={<ApiOutlined />}
+          title="Chặn port khác 80/443"
+          desc="Chặn mọi request không vào qua port 80/443."
+          disabled={isDefault}
+        />
+        <ToggleRow
+          name="block_bad_ua_enabled"
+          icon={<DesktopOutlined />}
+          title="Chặn UA không giống browser thật"
+          desc='Chặn User-Agent rỗng, hoặc không chứa "mozilla"/"opera".'
+          disabled={isDefault}
+        />
+      </Col>
+    </Row>
   </>
 );
 
@@ -143,6 +205,49 @@ const AddPresetButton: React.FC<{ label: string; value: string }> = ({ label, va
     </Button>
   );
 };
+
+const TemplateCard: React.FC<{
+  tpl: API.CfFirewallTemplateItem;
+  onEdit: () => void;
+  onDelete: () => void;
+}> = ({ tpl, onEdit, onDelete }) => (
+  <Card
+    hoverable
+    style={{ height: '100%' }}
+    styles={{ body: { display: 'flex', flexDirection: 'column', gap: 12, height: 'calc(100% - 58px)' } }}
+    title={
+      <Space>
+        <Typography.Text strong style={{ fontSize: 15 }} ellipsis={{ tooltip: tpl.name }}>
+          {tpl.name}
+        </Typography.Text>
+        {tpl.is_default && (
+          <Tag color="gold" icon={<CrownOutlined />}>
+            Mặc định
+          </Tag>
+        )}
+      </Space>
+    }
+    extra={
+      <Space size={4}>
+        <Tooltip title="Sửa">
+          <Button type="text" size="small" icon={<EditOutlined />} onClick={onEdit} />
+        </Tooltip>
+        <Tooltip title={tpl.is_default ? 'Không thể xoá template mặc định' : 'Xoá'}>
+          <Popconfirm title={`Xoá template "${tpl.name}"?`} disabled={tpl.is_default} onConfirm={onDelete}>
+            <Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={tpl.is_default} />
+          </Popconfirm>
+        </Tooltip>
+      </Space>
+    }
+  >
+    <div style={{ flex: 1 }}>
+      <FirewallTemplateSummary tpl={tpl} />
+    </div>
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <UserOutlined /> {tpl.created_by} · {dayjs(tpl.created_at).format('DD/MM/YYYY HH:mm')}
+    </Typography.Text>
+  </Card>
+);
 
 const CfFirewallTemplatesBody: React.FC = () => {
   const { message } = App.useApp();
@@ -193,89 +298,57 @@ const CfFirewallTemplatesBody: React.FC = () => {
     }
   };
 
+  const defaultName = templates.find((t) => t.is_default)?.name || 'Mặc định';
+
   return (
-    <PageContainer title="Template Firewall">
+    <PageContainer
+      title="Template Firewall"
+      extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
+          Thêm template
+        </Button>
+      }
+    >
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="Mỗi template định nghĩa phần có thể tuỳ biến của bộ rule Firewall - chọn template cần dùng ngay tại trang 'Firewall' (Tác vụ Cloudflare) khi áp dụng cho domain."
-        description={`Template "${templates.find((t) => t.is_default)?.name || 'Mặc định'}" không xoá được - luôn có 1 lựa chọn an toàn để quay lại nếu 1 template tuỳ chỉnh có vấn đề.`}
+        message="Chọn template cần dùng ngay tại trang 'Firewall' (Tác vụ Cloudflare) khi áp dụng cho domain."
+        description={`Template "${defaultName}" không xoá được và luôn giữ đủ 3 rule nền - luôn có 1 lựa chọn an toàn để quay lại nếu 1 template tuỳ chỉnh có vấn đề.`}
       />
 
-      <Card>
-        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
-          <Button icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-            Thêm template
-          </Button>
-        </div>
-        <Table<API.CfFirewallTemplateItem>
-          rowKey="id"
-          loading={loading}
-          dataSource={templates}
-          pagination={false}
-          columns={[
-            {
-              title: 'Tên',
-              dataIndex: 'name',
-              render: (v, r) => (
-                <Space>
-                  <Typography.Text strong>{v}</Typography.Text>
-                  {r.is_default && <Tag color="blue">Mặc định</Tag>}
-                </Space>
-              ),
-            },
-            { title: 'Nội dung', render: (_, r) => <FirewallTemplateSummary tpl={r} /> },
-            { title: 'Người tạo', dataIndex: 'created_by' },
-            {
-              title: 'Ngày tạo',
-              dataIndex: 'created_at',
-              render: (v) => dayjs(v).format('YYYY-MM-DD HH:mm'),
-            },
-            {
-              title: 'Hành động',
-              render: (_, r) => (
-                <Space>
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      setEditRow(r);
-                      editForm.setFieldsValue({
-                        name: r.name,
-                        countries_blocked: r.countries_blocked,
-                        blocked_user_agents: r.blocked_user_agents,
-                        blocked_paths: r.blocked_paths,
-                        bot_fight_mode: r.bot_fight_mode,
-                        skip_safety_enabled: r.skip_safety_enabled,
-                        block_bad_ports_enabled: r.block_bad_ports_enabled,
-                        block_bad_ua_enabled: r.block_bad_ua_enabled,
-                      });
-                    }}
-                  >
-                    Sửa
-                  </Button>
-                  <Popconfirm
-                    title={`Xoá template "${r.name}"?`}
-                    disabled={r.is_default}
-                    onConfirm={() => handleDelete(r)}
-                  >
-                    <Button size="small" danger icon={<DeleteOutlined />} disabled={r.is_default}>
-                      Xoá
-                    </Button>
-                  </Popconfirm>
-                </Space>
-              ),
-            },
-          ]}
-        />
-      </Card>
+      <Spin spinning={loading}>
+        <Row gutter={[16, 16]}>
+          {templates.map((t) => (
+            <Col key={t.id} xs={24} sm={12} lg={8}>
+              <TemplateCard
+                tpl={t}
+                onEdit={() => {
+                  setEditRow(t);
+                  editForm.setFieldsValue({
+                    name: t.name,
+                    countries_blocked: t.countries_blocked,
+                    blocked_user_agents: t.blocked_user_agents,
+                    blocked_paths: t.blocked_paths,
+                    bot_fight_mode: t.bot_fight_mode,
+                    skip_safety_enabled: t.skip_safety_enabled,
+                    block_bad_ports_enabled: t.block_bad_ports_enabled,
+                    block_bad_ua_enabled: t.block_bad_ua_enabled,
+                  });
+                }}
+                onDelete={() => handleDelete(t)}
+              />
+            </Col>
+          ))}
+        </Row>
+      </Spin>
 
       <Modal
         title="Thêm template Firewall"
         open={addOpen}
         onCancel={() => setAddOpen(false)}
         onOk={() => addForm.submit()}
-        width={640}
+        width={760}
         destroyOnHidden
       >
         <Form
@@ -293,7 +366,7 @@ const CfFirewallTemplatesBody: React.FC = () => {
         open={!!editRow}
         onCancel={() => setEditRow(undefined)}
         onOk={() => editForm.submit()}
-        width={640}
+        width={760}
         destroyOnHidden
       >
         <Form form={editForm} layout="vertical" onFinish={handleEdit}>

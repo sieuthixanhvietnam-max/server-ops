@@ -1,79 +1,112 @@
 import { countryLabel } from '@/utils/countries';
-import { Space, Tag, Typography } from 'antd';
+import {
+  CheckCircleFilled,
+  CloseCircleFilled,
+  GlobalOutlined,
+  LinkOutlined,
+  RobotOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons';
+import { Space, Tag, Tooltip, Typography } from 'antd';
 import React from 'react';
 
-/** Read-only tag summary of 1 Firewall template - shared by the template
- * CRUD table's own "Nội dung" column AND the Firewall page's template
- * picker/confirm dialog, so the exact same glance-check content shows up
- * everywhere instead of only inside the template editor (design intent:
- * whoever runs the Firewall job sees this without having opened that page
- * first - see models.CfFirewallTemplate's docstring for why).
+const BASE_RULES: {
+  key: 'skip_safety_enabled' | 'block_bad_ports_enabled' | 'block_bad_ua_enabled';
+  label: string;
+  tooltip: string;
+}[] = [
+  {
+    key: 'skip_safety_enabled',
+    label: 'Skip-list an toàn',
+    tooltip:
+      'Bỏ qua mọi rule chặn bên dưới nếu: path chứa /wp-json/, HOẶC là bot đã xác minh, HOẶC IP nằm trong Whitelist IP, HOẶC ASN là Google.',
+  },
+  {
+    key: 'block_bad_ports_enabled',
+    label: 'Chặn port lạ',
+    tooltip: 'Chặn mọi request không vào qua port 80/443.',
+  },
+  {
+    key: 'block_bad_ua_enabled',
+    label: 'Chặn UA giả browser',
+    tooltip: 'Chặn User-Agent rỗng, hoặc không chứa "mozilla"/"opera".',
+  },
+];
+
+/** Read-only summary of 1 Firewall template - shared by the template CRUD
+ * page's cards AND the Firewall page's template picker/confirm dialog, so
+ * the exact same glance-check content shows up everywhere instead of only
+ * inside the template editor (whoever runs the Firewall job sees this
+ * without having opened that page first - see models.CfFirewallTemplate's
+ * docstring for why).
  *
- * The 3 base rules used to be permanently fixed for every template; now
- * they're per-template toggles too, so this always renders their state -
- * defaulting to on/green and nothing to be concerned about is exactly the
- * case most templates stay in, but a template that has turned one OFF needs
- * to show it as loudly here as the editable lists above, since that's the
- * one thing that can quietly let a block rule catch a whitelisted IP or
- * Googlebot. */
-const FirewallTemplateSummary: React.FC<{ tpl: API.CfFirewallTemplateItem }> = ({ tpl }) => (
-  <Space direction="vertical" size={4} style={{ maxWidth: 480 }}>
-    {tpl.countries_blocked.length > 0 && (
-      <div>
+ * The 3 base rules render FIRST, as status pills, not last as plain text -
+ * they're the one thing that can quietly let a block rule below catch a
+ * whitelisted IP or Googlebot, so they're the first thing a glance should
+ * catch, not something found by reading to the end. */
+const FirewallTemplateSummary: React.FC<{ tpl: API.CfFirewallTemplateItem }> = ({ tpl }) => {
+  const hasExtraRules =
+    tpl.countries_blocked.length > 0 || tpl.blocked_user_agents.length > 0 || tpl.blocked_paths.length > 0;
+
+  return (
+    <Space direction="vertical" size={8} style={{ maxWidth: 480 }}>
+      <Space wrap size={6}>
+        {BASE_RULES.map((rule) => {
+          const on = tpl[rule.key];
+          return (
+            <Tooltip key={rule.key} title={rule.tooltip}>
+              <Tag icon={on ? <CheckCircleFilled /> : <CloseCircleFilled />} color={on ? 'success' : 'error'}>
+                {rule.label}
+              </Tag>
+            </Tooltip>
+          );
+        })}
+      </Space>
+
+      {hasExtraRules ? (
+        <Space direction="vertical" size={4}>
+          {tpl.countries_blocked.length > 0 && (
+            <Space size={4} wrap align="start">
+              <GlobalOutlined style={{ color: '#8c8c8c' }} />
+              {tpl.countries_blocked.map((c) => (
+                <Tag key={c} color="red">
+                  {countryLabel(c)}
+                </Tag>
+              ))}
+            </Space>
+          )}
+          {tpl.blocked_user_agents.length > 0 && (
+            <Space size={4} wrap align="start">
+              <RobotOutlined style={{ color: '#8c8c8c' }} />
+              {tpl.blocked_user_agents.map((ua) => (
+                <Tag key={ua} color="volcano">
+                  {ua}
+                </Tag>
+              ))}
+            </Space>
+          )}
+          {tpl.blocked_paths.length > 0 && (
+            <Space size={4} wrap align="start">
+              <LinkOutlined style={{ color: '#8c8c8c' }} />
+              {tpl.blocked_paths.map((p) => (
+                <Tag key={p} color="orange">
+                  {p}
+                </Tag>
+              ))}
+            </Space>
+          )}
+        </Space>
+      ) : (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Chặn quốc gia:{' '}
+          Không chặn thêm gì ngoài rule nền phía trên.
         </Typography.Text>
-        {tpl.countries_blocked.map((c) => (
-          <Tag key={c} color="red">
-            {countryLabel(c)}
-          </Tag>
-        ))}
-      </div>
-    )}
-    {tpl.blocked_user_agents.length > 0 && (
-      <div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Chặn bot:{' '}
-        </Typography.Text>
-        {tpl.blocked_user_agents.map((ua) => (
-          <Tag key={ua} color="volcano">
-            {ua}
-          </Tag>
-        ))}
-      </div>
-    )}
-    {tpl.blocked_paths.length > 0 && (
-      <div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Chặn path:{' '}
-        </Typography.Text>
-        {tpl.blocked_paths.map((p) => (
-          <Tag key={p} color="orange">
-            {p}
-          </Tag>
-        ))}
-      </div>
-    )}
-    <Tag color={tpl.bot_fight_mode ? 'green' : 'default'}>
-      Bot Fight Mode: {tpl.bot_fight_mode ? 'BẬT' : 'TẮT'}
-    </Tag>
-    {!tpl.countries_blocked.length && !tpl.blocked_user_agents.length && !tpl.blocked_paths.length && (
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        Không chặn thêm gì ngoài 3 rule nền bên dưới.
-      </Typography.Text>
-    )}
-    <Space wrap size={4}>
-      <Tag color={tpl.skip_safety_enabled ? 'default' : 'red'}>
-        Skip-list an toàn (whitelist/bot/Google): {tpl.skip_safety_enabled ? 'BẬT' : 'TẮT'}
-      </Tag>
-      <Tag color={tpl.block_bad_ports_enabled ? 'default' : 'red'}>
-        Chặn port lạ: {tpl.block_bad_ports_enabled ? 'BẬT' : 'TẮT'}
-      </Tag>
-      <Tag color={tpl.block_bad_ua_enabled ? 'default' : 'red'}>
-        Chặn UA không giống browser: {tpl.block_bad_ua_enabled ? 'BẬT' : 'TẮT'}
+      )}
+
+      <Tag icon={<ThunderboltOutlined />} color={tpl.bot_fight_mode ? 'success' : 'default'}>
+        Bot Fight Mode: {tpl.bot_fight_mode ? 'BẬT' : 'TẮT'}
       </Tag>
     </Space>
-  </Space>
-);
+  );
+};
 
 export default FirewallTemplateSummary;
