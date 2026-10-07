@@ -248,7 +248,12 @@ class CfFirewallTemplate(Base):
     (country/path/UA) can then match and block a whitelisted IP or
     Googlebot, which used to be structurally impossible. All 3 default True
     so every existing/new template keeps today's behavior unless someone
-    deliberately turns one off.
+    deliberately turns one off. Also explicitly true for is_default=True -
+    an admin can turn any of these off on the "Mặc định" template itself
+    (also the user's explicit call), so is_default's only remaining
+    guarantee is that the row can't be deleted (see
+    routers/cf_firewall_templates.py); it is no longer necessarily a
+    "known-good" fallback in terms of rule content.
 
     countries_blocked / blocked_user_agents / blocked_paths are stored as
     JSON-encoded lists (json.dumps/json.loads at the router boundary, same
@@ -275,8 +280,10 @@ class CfFirewallTemplate(Base):
     block_bad_ua_enabled: Mapped[bool] = mapped_column(default=True)
     # The one template that's seeded on startup from the original hardcoded
     # ruleset and can never be deleted (see cf_firewall_template_service) -
-    # always a known-good fallback to pick if a custom template turns out
-    # to be wrong.
+    # always a selectable fallback name to switch back to. Its rule content
+    # (including the 3 base-rule toggles above) can be edited like any other
+    # template, so is_default no longer guarantees the content itself is
+    # safe - only that the row always exists.
     is_default: Mapped[bool] = mapped_column(default=False)
     created_by: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())

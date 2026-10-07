@@ -115,20 +115,6 @@ def update_cf_firewall_template(
     if not row:
         raise HTTPException(status_code=404, detail="not found")
 
-    if row.is_default and (
-        body.skip_safety_enabled is False
-        or body.block_bad_ports_enabled is False
-        or body.block_bad_ua_enabled is False
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Template '{DEFAULT_TEMPLATE_NAME}' phải luôn giữ đủ 3 rule nền (skip-list an toàn, "
-                "chặn port lạ, chặn UA không giống browser) - đây là lựa chọn an toàn duy nhất để quay lại, "
-                "tạo 1 template khác nếu cần tắt."
-            ),
-        )
-
     if body.name is not None:
         name = body.name.strip()
         if not name:

@@ -67,8 +67,7 @@ const ToggleRow: React.FC<{
   icon: React.ReactNode;
   title: string;
   desc: string;
-  disabled?: boolean;
-}> = ({ name, icon, title, desc, disabled }) => (
+}> = ({ name, icon, title, desc }) => (
   <div
     style={{
       display: 'flex',
@@ -93,7 +92,7 @@ const ToggleRow: React.FC<{
       </div>
     </Space>
     <Form.Item name={name} valuePropName="checked" noStyle>
-      <Switch disabled={disabled} />
+      <Switch />
     </Form.Item>
   </div>
 );
@@ -151,12 +150,12 @@ const TemplateFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) =>
           <SafetyCertificateOutlined /> Rule nền &amp; an toàn
         </Typography.Title>
         <Alert
-          type={isDefault ? 'info' : 'warning'}
+          type="warning"
           showIcon
           style={{ marginBottom: 12 }}
           message={
             isDefault
-              ? 'Template mặc định phải luôn giữ đủ 3 rule nền - không tắt được ở đây.'
+              ? 'Đây là template mặc định - lựa chọn hay được dùng lại khi 1 template khác có vấn đề. Tắt rule nền ở đây đồng nghĩa không còn template nào được đảm bảo an toàn tuyệt đối nữa.'
               : 'Tắt bất kỳ rule nào dưới đây có thể khiến rule chặn quốc gia/bot/path bên trái tự chặn nhầm IP whitelist hoặc Googlebot.'
           }
         />
@@ -165,21 +164,18 @@ const TemplateFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) =>
           icon={<SafetyCertificateOutlined />}
           title="Skip-list an toàn"
           desc="Bỏ qua mọi rule chặn nếu: path chứa /wp-json/, HOẶC là bot đã xác minh, HOẶC IP nằm trong Whitelist IP, HOẶC ASN là Google."
-          disabled={isDefault}
         />
         <ToggleRow
           name="block_bad_ports_enabled"
           icon={<ApiOutlined />}
           title="Chặn port khác 80/443"
           desc="Chặn mọi request không vào qua port 80/443."
-          disabled={isDefault}
         />
         <ToggleRow
           name="block_bad_ua_enabled"
           icon={<DesktopOutlined />}
           title="Chặn UA không giống browser thật"
           desc='Chặn User-Agent rỗng, hoặc không chứa "mozilla"/"opera".'
-          disabled={isDefault}
         />
       </Col>
     </Row>
@@ -213,8 +209,6 @@ const TemplateCard: React.FC<{
 }> = ({ tpl, onEdit, onDelete }) => (
   <Card
     hoverable
-    style={{ height: '100%' }}
-    styles={{ body: { display: 'flex', flexDirection: 'column', gap: 12, height: 'calc(100% - 58px)' } }}
     title={
       <Space>
         <Typography.Text strong style={{ fontSize: 15 }} ellipsis={{ tooltip: tpl.name }}>
@@ -240,10 +234,8 @@ const TemplateCard: React.FC<{
       </Space>
     }
   >
-    <div style={{ flex: 1 }}>
-      <FirewallTemplateSummary tpl={tpl} />
-    </div>
-    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+    <FirewallTemplateSummary tpl={tpl} />
+    <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 12 }}>
       <UserOutlined /> {tpl.created_by} · {dayjs(tpl.created_at).format('DD/MM/YYYY HH:mm')}
     </Typography.Text>
   </Card>
