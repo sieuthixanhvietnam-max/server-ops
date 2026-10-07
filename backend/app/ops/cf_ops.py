@@ -265,16 +265,25 @@ class CFClient:
         countries_blocked: list[str],
         blocked_user_agents: list[str],
         blocked_paths: list[str],
+        skip_safety_enabled: bool = True,
+        block_bad_ports_enabled: bool = True,
+        block_bad_ua_enabled: bool = True,
     ):
-        """The first 3 rules (skip-list, port check, generic non-browser-UA
-        check) are fixed for every template on purpose - see
-        models.CfFirewallTemplate's docstring for why. countries_blocked /
-        blocked_paths / blocked_user_agents come from whichever template the
-        caller resolved; any of the 3 being empty just omits that rule
-        (an empty Cloudflare set/OR-chain isn't meaningful to send)."""
+        """All 6 rules are now per-template toggles/lists (see
+        models.CfFirewallTemplate's docstring) - the 3 bool flags gate the
+        rules that used to be permanently fixed (skip-list, port check,
+        generic non-browser-UA check). Turning skip_safety_enabled off means
+        the block rules below can then match a whitelisted IP / verified bot
+        / Google, which is the whole point of the toggle existing but also
+        exactly the risk the user accepted when asking for this - no
+        implicit re-adding of the skip rule happens here regardless of what
+        else is configured. countries_blocked / blocked_paths /
+        blocked_user_agents being empty just omits that rule (an empty
+        Cloudflare set/OR-chain isn't meaningful to send)."""
         ips = " ".join(whitelist_ips)
-        rules = [
-            {
+        rules = []
+        if skip_safety_enabled:
+            rules.append({
                 "description": "Skip: WP-JSON OR Bots OR Whitelist IPs OR Google ASN",
                 "expression": (
                     f'(http.request.uri.path contains "/wp-json/") '
@@ -283,13 +292,15 @@ class CFClient:
                 ),
                 "action": "skip", "enabled": True,
                 "action_parameters": {"ruleset": "current"},
-            },
-            {
+            })
+        if block_bad_ports_enabled:
+            rules.append({
                 "description": "Block ports != 80/443",
                 "expression": "not cf.edge.server_port in {80 443}",
                 "action": "block", "enabled": True,
-            },
-            {
+            })
+        if block_bad_ua_enabled:
+            rules.append({
                 "description": "Block non-browser UA",
                 "expression": (
                     '(http.user_agent eq "") or '
@@ -297,8 +308,7 @@ class CFClient:
                     'not lower(http.user_agent) contains "opera")'
                 ),
                 "action": "block", "enabled": True,
-            },
-        ]
+            })
         if countries_blocked:
             codes = " ".join(f'"{c}"' for c in countries_blocked)
             rules.append({
@@ -341,6 +351,9 @@ class CFClient:
         blocked_user_agents: list[str],
         blocked_paths: list[str],
         bot_fight_mode: bool,
+        skip_safety_enabled: bool = True,
+        block_bad_ports_enabled: bool = True,
+        block_bad_ua_enabled: bool = True,
     ) -> tuple[bool, str]:
         """Same PUT as set_firewall_rules but returns (ok, msg) instead of
         logging directly - used by callers (update_firewall) that need to
@@ -351,7 +364,10 @@ class CFClient:
         didn't get it is exactly the kind of mismatch nobody would notice
         later."""
         url = f"{CF_BASE}/{zone_id}/rulesets/phases/http_request_firewall_custom/entrypoint"
-        rules = self._build_firewall_rules(whitelist_ips, countries_blocked, blocked_user_agents, blocked_paths)
+        rules = self._build_firewall_rules(
+            whitelist_ips, countries_blocked, blocked_user_agents, blocked_paths,
+            skip_safety_enabled, block_bad_ports_enabled, block_bad_ua_enabled,
+        )
         r = self._put(url, json={"rules": rules})
         ruleset_ok = bool(r.get("success"))
         ruleset_msg = f"{len(rules)} rule(s) áp dụng" if ruleset_ok else self._err_msg(r)
@@ -372,9 +388,13 @@ class CFClient:
         blocked_user_agents: list[str],
         blocked_paths: list[str],
         bot_fight_mode: bool,
+        skip_safety_enabled: bool = True,
+        block_bad_ports_enabled: bool = True,
+        block_bad_ua_enabled: bool = True,
     ):
         ok, msg = self.set_firewall_rules_result(
-            zone_id, whitelist_ips, countries_blocked, blocked_user_agents, blocked_paths, bot_fight_mode
+            zone_id, whitelist_ips, countries_blocked, blocked_user_agents, blocked_paths, bot_fight_mode,
+            skip_safety_enabled, block_bad_ports_enabled, block_bad_ua_enabled,
         )
         log(f"    Firewall  {msg}" if ok else f"    [fail] Firewall: {msg}")
 
@@ -620,11 +640,13 @@ def add_domains(
     back on every result row so the caller can tell which account each
     domain landed in without re-deriving it. firewall_template: the resolved
     {"countries_blocked", "blocked_user_agents", "blocked_paths",
-    "bot_fight_mode"} dict to apply to the new zone's firewall - this flow
-    has no template picker of its own, so the caller always resolves the
-    "Mặc định" template here (see cf_firewall_template_service)."""
+    "bot_fight_mode", "skip_safety_enabled", "block_bad_ports_enabled",
+    "block_bad_ua_enabled"} dict to apply to the new zone's firewall - this
+    flow has no template picker of its own, so the caller always resolves
+    the "Mặc định" template here (see cf_firewall_template_service)."""
     firewall_template = firewall_template or {
         "countries_blocked": [], "blocked_user_agents": [], "blocked_paths": [], "bot_fight_mode": False,
+        "skip_safety_enabled": True, "block_bad_ports_enabled": True, "block_bad_ua_enabled": True,
     }
     cf = CFClient(api_token)
     log(f"Adding {len(entries)} domain(s) to Cloudflare...")
@@ -675,6 +697,8 @@ def add_domains(
             zone_id, log, whitelist_ips,
             firewall_template["countries_blocked"], firewall_template["blocked_user_agents"],
             firewall_template["blocked_paths"], firewall_template["bot_fight_mode"],
+            firewall_template["skip_safety_enabled"], firewall_template["block_bad_ports_enabled"],
+            firewall_template["block_bad_ua_enabled"],
         )
 
         ns = []
@@ -982,13 +1006,15 @@ def update_firewall(
     thousands of zones is the real scale here, see _parallel_batched).
     Passing an explicit domain list skips batching since that's always a
     small, deliberate set. template: {"name", "countries_blocked",
-    "blocked_user_agents", "blocked_paths", "bot_fight_mode"} - "name" is
-    echoed into every result row so which template a job used is visible
-    afterward (in the job log/result/CSV export) without anyone having had
-    to check beforehand."""
+    "blocked_user_agents", "blocked_paths", "bot_fight_mode",
+    "skip_safety_enabled", "block_bad_ports_enabled", "block_bad_ua_enabled"}
+    - "name" is echoed into every result row so which template a job used is
+    visible afterward (in the job log/result/CSV export) without anyone
+    having had to check beforehand."""
     template = template or {
         "name": "Mặc định", "countries_blocked": [], "blocked_user_agents": [],
-        "blocked_paths": [], "bot_fight_mode": False,
+        "blocked_paths": [], "bot_fight_mode": False, "skip_safety_enabled": True,
+        "block_bad_ports_enabled": True, "block_bad_ua_enabled": True,
     }
     cf = CFClient()
 
@@ -1003,6 +1029,7 @@ def update_firewall(
         ok, msg = cf.set_firewall_rules_result(
             zone_id, whitelist_ips, template["countries_blocked"], template["blocked_user_agents"],
             template["blocked_paths"], template["bot_fight_mode"],
+            template["skip_safety_enabled"], template["block_bad_ports_enabled"], template["block_bad_ua_enabled"],
         )
         if ok:
             log(f"[ ok ] {domain}: {msg}")

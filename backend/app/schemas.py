@@ -172,6 +172,9 @@ class CfFirewallTemplateOut(BaseModel):
     blocked_user_agents: list[str]
     blocked_paths: list[str]
     bot_fight_mode: bool
+    skip_safety_enabled: bool
+    block_bad_ports_enabled: bool
+    block_bad_ua_enabled: bool
     is_default: bool
     created_by: str
     created_at: datetime
@@ -189,6 +192,9 @@ class CfFirewallTemplateOut(BaseModel):
             blocked_user_agents=json.loads(row.blocked_user_agents),
             blocked_paths=json.loads(row.blocked_paths),
             bot_fight_mode=row.bot_fight_mode,
+            skip_safety_enabled=row.skip_safety_enabled,
+            block_bad_ports_enabled=row.block_bad_ports_enabled,
+            block_bad_ua_enabled=row.block_bad_ua_enabled,
             is_default=row.is_default,
             created_by=row.created_by,
             created_at=row.created_at,

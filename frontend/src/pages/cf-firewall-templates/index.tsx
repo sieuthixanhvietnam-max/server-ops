@@ -36,9 +36,12 @@ type TemplateFormValues = {
   blocked_user_agents: string[];
   blocked_paths: string[];
   bot_fight_mode: boolean;
+  skip_safety_enabled: boolean;
+  block_bad_ports_enabled: boolean;
+  block_bad_ua_enabled: boolean;
 };
 
-const TemplateFormFields: React.FC = () => (
+const TemplateFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) => (
   <>
     <Form.Item name="name" label="Tên template" rules={[{ required: true, message: 'Nhập tên template' }]}>
       <Input placeholder="VD: Khắt khe cho niche cờ bạc" />
@@ -46,7 +49,6 @@ const TemplateFormFields: React.FC = () => (
     <Form.Item
       name="countries_blocked"
       label="Chặn quốc gia"
-      tooltip="Không giới hạn - port 80/443, chặn UA không giống browser thật, và skip-list an toàn (whitelist IP/bot xác minh/Google/wp-json) luôn cố định cho mọi template, không nằm ở đây."
     >
       <Select
         mode="multiple"
@@ -80,6 +82,44 @@ const TemplateFormFields: React.FC = () => (
       tooltip="Setting riêng của Cloudflare ở cấp zone (khác hẳn các rule ở trên) - tự động chặn/challenge traffic giống bot mà Cloudflare tự nhận diện."
     >
       <Switch />
+    </Form.Item>
+
+    <Form.Item label="3 rule nền">
+      <Alert
+        type="warning"
+        showIcon
+        message={
+          isDefault
+            ? 'Template mặc định phải luôn giữ đủ 3 rule nền - không tắt được ở đây.'
+            : 'Tắt bất kỳ rule nào dưới đây có thể khiến rule chặn quốc gia/bot/path phía trên tự chặn nhầm IP whitelist hoặc Googlebot - chỉ tắt khi chắc chắn cần.'
+        }
+        style={{ marginBottom: 8 }}
+      />
+      <Space direction="vertical" size={4}>
+        <Form.Item
+          name="skip_safety_enabled"
+          valuePropName="checked"
+          noStyle
+          tooltip="Bỏ qua mọi rule chặn bên dưới nếu: path chứa /wp-json/, HOẶC là bot đã xác minh, HOẶC IP nằm trong Whitelist IP, HOẶC ASN là Google."
+        >
+          <Space>
+            <Switch disabled={isDefault} />
+            <Typography.Text>Skip-list an toàn (whitelist IP / bot xác minh / Google ASN / wp-json)</Typography.Text>
+          </Space>
+        </Form.Item>
+        <Form.Item name="block_bad_ports_enabled" valuePropName="checked" noStyle>
+          <Space>
+            <Switch disabled={isDefault} />
+            <Typography.Text>Chặn port khác 80/443</Typography.Text>
+          </Space>
+        </Form.Item>
+        <Form.Item name="block_bad_ua_enabled" valuePropName="checked" noStyle>
+          <Space>
+            <Switch disabled={isDefault} />
+            <Typography.Text>Chặn User-Agent không giống browser thật (rỗng, hoặc không chứa "mozilla"/"opera")</Typography.Text>
+          </Space>
+        </Form.Item>
+      </Space>
     </Form.Item>
   </>
 );
@@ -206,6 +246,9 @@ const CfFirewallTemplatesBody: React.FC = () => {
                         blocked_user_agents: r.blocked_user_agents,
                         blocked_paths: r.blocked_paths,
                         bot_fight_mode: r.bot_fight_mode,
+                        skip_safety_enabled: r.skip_safety_enabled,
+                        block_bad_ports_enabled: r.block_bad_ports_enabled,
+                        block_bad_ua_enabled: r.block_bad_ua_enabled,
                       });
                     }}
                   >
@@ -235,7 +278,12 @@ const CfFirewallTemplatesBody: React.FC = () => {
         width={640}
         destroyOnHidden
       >
-        <Form form={addForm} layout="vertical" onFinish={handleAdd}>
+        <Form
+          form={addForm}
+          layout="vertical"
+          onFinish={handleAdd}
+          initialValues={{ skip_safety_enabled: true, block_bad_ports_enabled: true, block_bad_ua_enabled: true }}
+        >
           <TemplateFormFields />
         </Form>
       </Modal>
@@ -249,7 +297,7 @@ const CfFirewallTemplatesBody: React.FC = () => {
         destroyOnHidden
       >
         <Form form={editForm} layout="vertical" onFinish={handleEdit}>
-          <TemplateFormFields />
+          <TemplateFormFields isDefault={editRow?.is_default} />
         </Form>
       </Modal>
     </PageContainer>

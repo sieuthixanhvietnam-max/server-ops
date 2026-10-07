@@ -237,14 +237,18 @@ class CfWhitelistIp(Base):
 
 class CfFirewallTemplate(Base):
     """A named, admin-editable variant of the rule set `cf_firewall_update`
-    applies to a zone (see cf_ops._build_firewall_rules). Only the knobs
-    below vary by template - port check, the generic non-browser-UA check,
-    and the safety "skip" list (whitelist IP / verified bot / Google ASN /
-    wp-json) stay fixed in code for every template regardless of what's
-    picked here, on purpose: whoever runs the Firewall page's "Chạy thật"
-    rarely re-reads the rule content before confirming (confirmed with the
-    user), so the one thing that must never vary per template is the safety
-    net that keeps a bad template from blocking Google or the office IP.
+    applies to a zone (see cf_ops._build_firewall_rules).
+
+    skip_safety_enabled / block_bad_ports_enabled / block_bad_ua_enabled
+    toggle the 3 rules that used to be permanently fixed for every template
+    (the whitelist/verified-bot/Google-ASN skip rule, the port-80/443-only
+    check, and the generic non-browser-UA check). Opened up to per-template
+    control on the user's explicit, risk-acknowledged request - disabling
+    skip_safety_enabled in particular means a template's other block rules
+    (country/path/UA) can then match and block a whitelisted IP or
+    Googlebot, which used to be structurally impossible. All 3 default True
+    so every existing/new template keeps today's behavior unless someone
+    deliberately turns one off.
 
     countries_blocked / blocked_user_agents / blocked_paths are stored as
     JSON-encoded lists (json.dumps/json.loads at the router boundary, same
@@ -266,6 +270,9 @@ class CfFirewallTemplate(Base):
     blocked_user_agents: Mapped[str] = mapped_column(Text, default="[]")
     blocked_paths: Mapped[str] = mapped_column(Text, default="[]")
     bot_fight_mode: Mapped[bool] = mapped_column(default=False)
+    skip_safety_enabled: Mapped[bool] = mapped_column(default=True)
+    block_bad_ports_enabled: Mapped[bool] = mapped_column(default=True)
+    block_bad_ua_enabled: Mapped[bool] = mapped_column(default=True)
     # The one template that's seeded on startup from the original hardcoded
     # ruleset and can never be deleted (see cf_firewall_template_service) -
     # always a known-good fallback to pick if a custom template turns out

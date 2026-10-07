@@ -75,3 +75,6 @@ def ensure_schema_migrations() -> None:
         _add_column_if_missing(conn, "changelog_entries", "change_type", "VARCHAR DEFAULT 'fix'")
         _add_column_if_missing(conn, "jobs", "fail_reason", "VARCHAR")
         _widen_to_numeric_if_needed(conn, "provider_costs", "amount_vnd", 18, 2)
+        _add_column_if_missing(conn, "cf_firewall_templates", "skip_safety_enabled", "BOOLEAN DEFAULT TRUE")
+        _add_column_if_missing(conn, "cf_firewall_templates", "block_bad_ports_enabled", "BOOLEAN DEFAULT TRUE")
+        _add_column_if_missing(conn, "cf_firewall_templates", "block_bad_ua_enabled", "BOOLEAN DEFAULT TRUE")

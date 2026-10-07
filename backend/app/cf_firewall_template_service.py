@@ -27,6 +27,9 @@ def template_to_params(row: CfFirewallTemplate) -> dict:
         "blocked_user_agents": json.loads(row.blocked_user_agents),
         "blocked_paths": json.loads(row.blocked_paths),
         "bot_fight_mode": row.bot_fight_mode,
+        "skip_safety_enabled": row.skip_safety_enabled,
+        "block_bad_ports_enabled": row.block_bad_ports_enabled,
+        "block_bad_ua_enabled": row.block_bad_ua_enabled,
     }
 
 
@@ -40,7 +43,8 @@ def get_default_template_params(db: Session) -> dict:
     if not row:
         return {
             "name": DEFAULT_TEMPLATE_NAME, "countries_blocked": [], "blocked_user_agents": [],
-            "blocked_paths": [], "bot_fight_mode": False,
+            "blocked_paths": [], "bot_fight_mode": False, "skip_safety_enabled": True,
+            "block_bad_ports_enabled": True, "block_bad_ua_enabled": True,
         }
     return template_to_params(row)
 

@@ -32,6 +32,9 @@ class CreateCfFirewallTemplateRequest(BaseModel):
     blocked_user_agents: list[str] = []
     blocked_paths: list[str] = []
     bot_fight_mode: bool = False
+    skip_safety_enabled: bool = True
+    block_bad_ports_enabled: bool = True
+    block_bad_ua_enabled: bool = True
 
 
 class UpdateCfFirewallTemplateRequest(BaseModel):
@@ -40,6 +43,9 @@ class UpdateCfFirewallTemplateRequest(BaseModel):
     blocked_user_agents: list[str] | None = None
     blocked_paths: list[str] | None = None
     bot_fight_mode: bool | None = None
+    skip_safety_enabled: bool | None = None
+    block_bad_ports_enabled: bool | None = None
+    block_bad_ua_enabled: bool | None = None
 
 
 def _normalize_countries(codes: list[str]) -> list[str]:
@@ -88,6 +94,9 @@ def create_cf_firewall_template(
         blocked_user_agents=json.dumps(_normalize_strings(body.blocked_user_agents)),
         blocked_paths=json.dumps(_normalize_strings(body.blocked_paths)),
         bot_fight_mode=body.bot_fight_mode,
+        skip_safety_enabled=body.skip_safety_enabled,
+        block_bad_ports_enabled=body.block_bad_ports_enabled,
+        block_bad_ua_enabled=body.block_bad_ua_enabled,
         is_default=False,
         created_by=username,
         created_at=datetime.now(timezone.utc),
@@ -105,6 +114,20 @@ def update_cf_firewall_template(
     row = db.get(CfFirewallTemplate, template_id)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
+
+    if row.is_default and (
+        body.skip_safety_enabled is False
+        or body.block_bad_ports_enabled is False
+        or body.block_bad_ua_enabled is False
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Template '{DEFAULT_TEMPLATE_NAME}' phải luôn giữ đủ 3 rule nền (skip-list an toàn, "
+                "chặn port lạ, chặn UA không giống browser) - đây là lựa chọn an toàn duy nhất để quay lại, "
+                "tạo 1 template khác nếu cần tắt."
+            ),
+        )
 
     if body.name is not None:
         name = body.name.strip()
@@ -124,6 +147,12 @@ def update_cf_firewall_template(
         row.blocked_paths = json.dumps(_normalize_strings(body.blocked_paths))
     if body.bot_fight_mode is not None:
         row.bot_fight_mode = body.bot_fight_mode
+    if body.skip_safety_enabled is not None:
+        row.skip_safety_enabled = body.skip_safety_enabled
+    if body.block_bad_ports_enabled is not None:
+        row.block_bad_ports_enabled = body.block_bad_ports_enabled
+    if body.block_bad_ua_enabled is not None:
+        row.block_bad_ua_enabled = body.block_bad_ua_enabled
 
     db.commit()
     db.refresh(row)

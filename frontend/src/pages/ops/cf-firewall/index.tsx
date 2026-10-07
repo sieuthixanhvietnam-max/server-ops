@@ -61,6 +61,11 @@ const CfFirewall: React.FC = () => {
   }, []);
 
   const selectedTemplate = templates.find((t) => t.id === templateId);
+  const baseRulesDisabled =
+    !!selectedTemplate &&
+    (!selectedTemplate.skip_safety_enabled ||
+      !selectedTemplate.block_bad_ports_enabled ||
+      !selectedTemplate.block_bad_ua_enabled);
   const domains = parseDomains(text);
   const isBusy = running || job?.status === 'running' || job?.status === 'pending';
   const canRun = (mode === 'all_zones' || domains.length > 0) && !!templateId;
@@ -176,6 +181,15 @@ const CfFirewall: React.FC = () => {
                   <div style={{ marginTop: 4 }}>
                     <FirewallTemplateSummary tpl={selectedTemplate} />
                   </div>
+                  {baseRulesDisabled && (
+                    <Alert
+                      type="error"
+                      showIcon
+                      icon={<WarningFilled />}
+                      style={{ marginTop: 8 }}
+                      message="Template này đã TẮT ít nhất 1 trong 3 rule nền (xem tag màu đỏ phía trên) - rule chặn quốc gia/bot/path có thể tự chặn nhầm IP whitelist hoặc Googlebot. Kiểm tra lại kỹ trước khi tiếp tục."
+                    />
+                  )}
                   {mode === 'all_zones' && !selectedTemplate.is_default && (
                     <Alert
                       type="error"

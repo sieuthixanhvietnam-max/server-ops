@@ -786,6 +786,9 @@ export async function createCfFirewallTemplate(
     blocked_user_agents?: string[];
     blocked_paths?: string[];
     bot_fight_mode?: boolean;
+    skip_safety_enabled?: boolean;
+    block_bad_ports_enabled?: boolean;
+    block_bad_ua_enabled?: boolean;
   },
   options?: { [key: string]: any },
 ) {
@@ -805,6 +808,9 @@ export async function updateCfFirewallTemplate(
     blocked_user_agents?: string[];
     blocked_paths?: string[];
     bot_fight_mode?: boolean;
+    skip_safety_enabled?: boolean;
+    block_bad_ports_enabled?: boolean;
+    block_bad_ua_enabled?: boolean;
   },
   options?: { [key: string]: any },
 ) {
