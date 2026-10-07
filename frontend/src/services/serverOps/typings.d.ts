@@ -398,9 +398,12 @@ declare namespace API {
     blocked_user_agents: string[];
     blocked_paths: string[];
     bot_fight_mode: boolean;
-    skip_safety_enabled: boolean;
-    block_bad_ports_enabled: boolean;
-    block_bad_ua_enabled: boolean;
+    skip_paths: string[];
+    skip_verified_bot: boolean;
+    skip_whitelist_ip: boolean;
+    skip_asns: string[];
+    allowed_ports: string[];
+    allowed_ua_substrings: string[];
     is_default: boolean;
     created_by: string;
     created_at: string;

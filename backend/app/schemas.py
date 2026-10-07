@@ -172,16 +172,19 @@ class CfFirewallTemplateOut(BaseModel):
     blocked_user_agents: list[str]
     blocked_paths: list[str]
     bot_fight_mode: bool
-    skip_safety_enabled: bool
-    block_bad_ports_enabled: bool
-    block_bad_ua_enabled: bool
+    skip_paths: list[str]
+    skip_verified_bot: bool
+    skip_whitelist_ip: bool
+    skip_asns: list[str]
+    allowed_ports: list[str]
+    allowed_ua_substrings: list[str]
     is_default: bool
     created_by: str
     created_at: datetime
 
-    # The 3 list fields are JSON-encoded in a Text column on the ORM side
-    # (see models.CfFirewallTemplate) - model_validate can't decode that on
-    # its own, so routers build this via from_row() instead of calling
+    # Several fields are JSON-encoded in a Text column on the ORM side (see
+    # models.CfFirewallTemplate) - model_validate can't decode that on its
+    # own, so routers build this via from_row() instead of calling
     # model_validate(row) directly on the ORM object.
     @classmethod
     def from_row(cls, row) -> "CfFirewallTemplateOut":
@@ -192,9 +195,12 @@ class CfFirewallTemplateOut(BaseModel):
             blocked_user_agents=json.loads(row.blocked_user_agents),
             blocked_paths=json.loads(row.blocked_paths),
             bot_fight_mode=row.bot_fight_mode,
-            skip_safety_enabled=row.skip_safety_enabled,
-            block_bad_ports_enabled=row.block_bad_ports_enabled,
-            block_bad_ua_enabled=row.block_bad_ua_enabled,
+            skip_paths=json.loads(row.skip_paths),
+            skip_verified_bot=row.skip_verified_bot,
+            skip_whitelist_ip=row.skip_whitelist_ip,
+            skip_asns=json.loads(row.skip_asns),
+            allowed_ports=json.loads(row.allowed_ports),
+            allowed_ua_substrings=json.loads(row.allowed_ua_substrings),
             is_default=row.is_default,
             created_by=row.created_by,
             created_at=row.created_at,

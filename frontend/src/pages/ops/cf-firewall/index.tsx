@@ -124,9 +124,14 @@ const CfFirewall: React.FC = () => {
   const selectedTemplate = templates.find((t) => t.id === templateId);
   const baseRulesDisabled =
     !!selectedTemplate &&
-    (!selectedTemplate.skip_safety_enabled ||
-      !selectedTemplate.block_bad_ports_enabled ||
-      !selectedTemplate.block_bad_ua_enabled);
+    (!selectedTemplate.skip_whitelist_ip ||
+      !selectedTemplate.skip_verified_bot ||
+      selectedTemplate.allowed_ports.length === 0 ||
+      selectedTemplate.allowed_ua_substrings.length === 0 ||
+      (selectedTemplate.skip_paths.length === 0 &&
+        selectedTemplate.skip_asns.length === 0 &&
+        !selectedTemplate.skip_whitelist_ip &&
+        !selectedTemplate.skip_verified_bot));
   const domains = parseDomains(text);
   const isBusy = running || job?.status === 'running' || job?.status === 'pending';
   const canRun = (mode === 'all_zones' || domains.length > 0) && !!templateId;

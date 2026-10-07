@@ -14,6 +14,10 @@ from app.models import CfFirewallTemplate
 DEFAULT_TEMPLATE_NAME = "Mặc định"
 _DEFAULT_COUNTRIES = ["PH", "AE", "US", "AG", "MT", "CW", "GB", "DE", "CR", "CA", "SG", "FR"]
 _DEFAULT_PATHS = ["xmlrpc.php"]
+_DEFAULT_SKIP_PATHS = ["/wp-json/"]
+_DEFAULT_SKIP_ASNS = ["15169"]  # Google
+_DEFAULT_ALLOWED_PORTS = ["80", "443"]
+_DEFAULT_ALLOWED_UA_SUBSTRINGS = ["mozilla", "opera"]
 
 
 def template_to_params(row: CfFirewallTemplate) -> dict:
@@ -27,9 +31,12 @@ def template_to_params(row: CfFirewallTemplate) -> dict:
         "blocked_user_agents": json.loads(row.blocked_user_agents),
         "blocked_paths": json.loads(row.blocked_paths),
         "bot_fight_mode": row.bot_fight_mode,
-        "skip_safety_enabled": row.skip_safety_enabled,
-        "block_bad_ports_enabled": row.block_bad_ports_enabled,
-        "block_bad_ua_enabled": row.block_bad_ua_enabled,
+        "skip_paths": json.loads(row.skip_paths),
+        "skip_verified_bot": row.skip_verified_bot,
+        "skip_whitelist_ip": row.skip_whitelist_ip,
+        "skip_asns": json.loads(row.skip_asns),
+        "allowed_ports": json.loads(row.allowed_ports),
+        "allowed_ua_substrings": json.loads(row.allowed_ua_substrings),
     }
 
 
@@ -43,8 +50,9 @@ def get_default_template_params(db: Session) -> dict:
     if not row:
         return {
             "name": DEFAULT_TEMPLATE_NAME, "countries_blocked": [], "blocked_user_agents": [],
-            "blocked_paths": [], "bot_fight_mode": False, "skip_safety_enabled": True,
-            "block_bad_ports_enabled": True, "block_bad_ua_enabled": True,
+            "blocked_paths": [], "bot_fight_mode": False, "skip_paths": _DEFAULT_SKIP_PATHS,
+            "skip_verified_bot": True, "skip_whitelist_ip": True, "skip_asns": _DEFAULT_SKIP_ASNS,
+            "allowed_ports": _DEFAULT_ALLOWED_PORTS, "allowed_ua_substrings": _DEFAULT_ALLOWED_UA_SUBSTRINGS,
         }
     return template_to_params(row)
 
@@ -61,6 +69,12 @@ def seed_cf_firewall_templates(db: Session) -> None:
         blocked_user_agents=json.dumps([]),
         blocked_paths=json.dumps(_DEFAULT_PATHS),
         bot_fight_mode=False,
+        skip_paths=json.dumps(_DEFAULT_SKIP_PATHS),
+        skip_verified_bot=True,
+        skip_whitelist_ip=True,
+        skip_asns=json.dumps(_DEFAULT_SKIP_ASNS),
+        allowed_ports=json.dumps(_DEFAULT_ALLOWED_PORTS),
+        allowed_ua_substrings=json.dumps(_DEFAULT_ALLOWED_UA_SUBSTRINGS),
         is_default=True,
         created_by="system",
         created_at=datetime.now(timezone.utc),

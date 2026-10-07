@@ -32,9 +32,12 @@ class CreateCfFirewallTemplateRequest(BaseModel):
     blocked_user_agents: list[str] = []
     blocked_paths: list[str] = []
     bot_fight_mode: bool = False
-    skip_safety_enabled: bool = True
-    block_bad_ports_enabled: bool = True
-    block_bad_ua_enabled: bool = True
+    skip_paths: list[str] = ["/wp-json/"]
+    skip_verified_bot: bool = True
+    skip_whitelist_ip: bool = True
+    skip_asns: list[str] = ["15169"]
+    allowed_ports: list[str] = ["80", "443"]
+    allowed_ua_substrings: list[str] = ["mozilla", "opera"]
 
 
 class UpdateCfFirewallTemplateRequest(BaseModel):
@@ -43,9 +46,12 @@ class UpdateCfFirewallTemplateRequest(BaseModel):
     blocked_user_agents: list[str] | None = None
     blocked_paths: list[str] | None = None
     bot_fight_mode: bool | None = None
-    skip_safety_enabled: bool | None = None
-    block_bad_ports_enabled: bool | None = None
-    block_bad_ua_enabled: bool | None = None
+    skip_paths: list[str] | None = None
+    skip_verified_bot: bool | None = None
+    skip_whitelist_ip: bool | None = None
+    skip_asns: list[str] | None = None
+    allowed_ports: list[str] | None = None
+    allowed_ua_substrings: list[str] | None = None
 
 
 def _normalize_countries(codes: list[str]) -> list[str]:
@@ -64,6 +70,28 @@ def _normalize_strings(values: list[str]) -> list[str]:
     for v in values:
         v = v.strip()
         if v and v not in out:
+            out.append(v)
+    return out
+
+
+def _normalize_ports(values: list[str]) -> list[str]:
+    out = []
+    for v in values:
+        v = str(v).strip()
+        if not v.isdigit() or not (1 <= int(v) <= 65535):
+            raise HTTPException(status_code=400, detail=f"'{v}' không phải port hợp lệ (1-65535)")
+        if v not in out:
+            out.append(v)
+    return out
+
+
+def _normalize_asns(values: list[str]) -> list[str]:
+    out = []
+    for v in values:
+        v = str(v).strip()
+        if not v.isdigit():
+            raise HTTPException(status_code=400, detail=f"'{v}' không phải ASN hợp lệ (chỉ gồm số)")
+        if v not in out:
             out.append(v)
     return out
 
@@ -94,9 +122,12 @@ def create_cf_firewall_template(
         blocked_user_agents=json.dumps(_normalize_strings(body.blocked_user_agents)),
         blocked_paths=json.dumps(_normalize_strings(body.blocked_paths)),
         bot_fight_mode=body.bot_fight_mode,
-        skip_safety_enabled=body.skip_safety_enabled,
-        block_bad_ports_enabled=body.block_bad_ports_enabled,
-        block_bad_ua_enabled=body.block_bad_ua_enabled,
+        skip_paths=json.dumps(_normalize_strings(body.skip_paths)),
+        skip_verified_bot=body.skip_verified_bot,
+        skip_whitelist_ip=body.skip_whitelist_ip,
+        skip_asns=json.dumps(_normalize_asns(body.skip_asns)),
+        allowed_ports=json.dumps(_normalize_ports(body.allowed_ports)),
+        allowed_ua_substrings=json.dumps(_normalize_strings(body.allowed_ua_substrings)),
         is_default=False,
         created_by=username,
         created_at=datetime.now(timezone.utc),
@@ -133,12 +164,18 @@ def update_cf_firewall_template(
         row.blocked_paths = json.dumps(_normalize_strings(body.blocked_paths))
     if body.bot_fight_mode is not None:
         row.bot_fight_mode = body.bot_fight_mode
-    if body.skip_safety_enabled is not None:
-        row.skip_safety_enabled = body.skip_safety_enabled
-    if body.block_bad_ports_enabled is not None:
-        row.block_bad_ports_enabled = body.block_bad_ports_enabled
-    if body.block_bad_ua_enabled is not None:
-        row.block_bad_ua_enabled = body.block_bad_ua_enabled
+    if body.skip_paths is not None:
+        row.skip_paths = json.dumps(_normalize_strings(body.skip_paths))
+    if body.skip_verified_bot is not None:
+        row.skip_verified_bot = body.skip_verified_bot
+    if body.skip_whitelist_ip is not None:
+        row.skip_whitelist_ip = body.skip_whitelist_ip
+    if body.skip_asns is not None:
+        row.skip_asns = json.dumps(_normalize_asns(body.skip_asns))
+    if body.allowed_ports is not None:
+        row.allowed_ports = json.dumps(_normalize_ports(body.allowed_ports))
+    if body.allowed_ua_substrings is not None:
+        row.allowed_ua_substrings = json.dumps(_normalize_strings(body.allowed_ua_substrings))
 
     db.commit()
     db.refresh(row)

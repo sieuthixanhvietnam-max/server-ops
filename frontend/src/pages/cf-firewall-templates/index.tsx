@@ -54,14 +54,18 @@ type TemplateFormValues = {
   blocked_user_agents: string[];
   blocked_paths: string[];
   bot_fight_mode: boolean;
-  skip_safety_enabled: boolean;
-  block_bad_ports_enabled: boolean;
-  block_bad_ua_enabled: boolean;
+  skip_paths: string[];
+  skip_verified_bot: boolean;
+  skip_whitelist_ip: boolean;
+  skip_asns: string[];
+  allowed_ports: string[];
+  allowed_ua_substrings: string[];
 };
 
-/** 1 settings-style row inside the "Rule nền & an toàn" tab - icon + title +
- * description on the left, the actual Switch flush right. Plain div instead
- * of a Card so it reads as one list of toggles, not a stack of boxes. */
+/** 1 settings-style row inside "Rule nền & an toàn" cho 2 field thật sự chỉ
+ * có 2 trạng thái (dùng tín hiệu Cloudflare/Whitelist IP hay không, không
+ * có "giá trị" nào khác để sửa) - icon + title + description bên trái,
+ * Switch bên phải. */
 const ToggleRow: React.FC<{
   name: string;
   icon: React.ReactNode;
@@ -93,6 +97,35 @@ const ToggleRow: React.FC<{
     </Space>
     <Form.Item name={name} valuePropName="checked" noStyle>
       <Switch />
+    </Form.Item>
+  </div>
+);
+
+/** Cùng kiểu hàng settings như ToggleRow, nhưng cho các rule nền có NỘI
+ * DUNG thật để sửa (danh sách path/ASN/port/UA) - input tags thay cho
+ * Switch, xoá hết danh sách = rule đó không còn áp dụng (giống hệt ngữ
+ * nghĩa countries_blocked/blocked_paths/blocked_user_agents phía trên). */
+const ListRow: React.FC<{
+  name: string;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  placeholder?: string;
+}> = ({ name, icon, title, desc, placeholder }) => (
+  <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fafafa', marginBottom: 8 }}>
+    <Space align="start" style={{ marginBottom: 6 }}>
+      <span style={{ fontSize: 16, color: '#1890ff', marginTop: 2 }}>{icon}</span>
+      <div>
+        <Typography.Text strong>{title}</Typography.Text>
+        <div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {desc}
+          </Typography.Text>
+        </div>
+      </div>
+    </Space>
+    <Form.Item name={name} noStyle>
+      <Select mode="tags" style={{ width: '100%' }} placeholder={placeholder} tokenSeparators={[',']} />
     </Form.Item>
   </div>
 );
@@ -155,27 +188,52 @@ const TemplateFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) =>
           style={{ marginBottom: 12 }}
           message={
             isDefault
-              ? 'Đây là template mặc định - lựa chọn hay được dùng lại khi 1 template khác có vấn đề. Tắt rule nền ở đây đồng nghĩa không còn template nào được đảm bảo an toàn tuyệt đối nữa.'
-              : 'Tắt bất kỳ rule nào dưới đây có thể khiến rule chặn quốc gia/bot/path bên trái tự chặn nhầm IP whitelist hoặc Googlebot.'
+              ? 'Đây là template mặc định - lựa chọn hay được dùng lại khi 1 template khác có vấn đề. Xoá hết 1 danh sách hoặc tắt 1 toggle dưới đây đồng nghĩa không còn template nào được đảm bảo an toàn tuyệt đối nữa.'
+              : 'Xoá hết 1 danh sách hoặc tắt 1 toggle dưới đây đồng nghĩa rule đó không còn áp dụng - có thể khiến rule chặn quốc gia/bot/path bên trái bắt nhầm IP whitelist hoặc Googlebot.'
           }
         />
+        <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+          Request được "bỏ qua" (skip) nếu khớp BẤT KỲ điều kiện nào dưới đây - không bị áp các rule chặn ở cột trái.
+        </Typography.Text>
         <ToggleRow
-          name="skip_safety_enabled"
+          name="skip_verified_bot"
+          icon={<RobotOutlined />}
+          title="Bỏ qua bot đã xác minh (Cloudflare)"
+          desc="Dùng tín hiệu cf.client.bot do Cloudflare tự nhận diện."
+        />
+        <ToggleRow
+          name="skip_whitelist_ip"
           icon={<SafetyCertificateOutlined />}
-          title="Skip-list an toàn"
-          desc="Bỏ qua mọi rule chặn nếu: path chứa /wp-json/, HOẶC là bot đã xác minh, HOẶC IP nằm trong Whitelist IP, HOẶC ASN là Google."
+          title="Bỏ qua IP trong Whitelist IP"
+          desc="Dùng danh sách IP đang bật ở trang 'Whitelist IP (Firewall)'."
         />
-        <ToggleRow
-          name="block_bad_ports_enabled"
+        <ListRow
+          name="skip_asns"
+          icon={<GlobalOutlined />}
+          title="Bỏ qua theo ASN"
+          desc="Mặc định 15169 (Google) - thêm/xoá ASN tuỳ ý."
+          placeholder="VD: 15169"
+        />
+        <ListRow
+          name="skip_paths"
+          icon={<LinkOutlined />}
+          title="Bỏ qua theo path"
+          desc="Mặc định /wp-json/ - URL chứa 1 trong các chuỗi này sẽ được bỏ qua."
+          placeholder="VD: /wp-json/"
+        />
+        <ListRow
+          name="allowed_ports"
           icon={<ApiOutlined />}
-          title="Chặn port khác 80/443"
-          desc="Chặn mọi request không vào qua port 80/443."
+          title="Port được phép"
+          desc="Chặn mọi request không vào qua 1 trong các port này. Mặc định 80, 443."
+          placeholder="VD: 80"
         />
-        <ToggleRow
-          name="block_bad_ua_enabled"
+        <ListRow
+          name="allowed_ua_substrings"
           icon={<DesktopOutlined />}
-          title="Chặn UA không giống browser thật"
-          desc='Chặn User-Agent rỗng, hoặc không chứa "mozilla"/"opera".'
+          title="Chuỗi UA hợp lệ (browser thật)"
+          desc='Chặn User-Agent không chứa bất kỳ chuỗi nào ở đây. Mặc định "mozilla", "opera".'
+          placeholder="VD: mozilla"
         />
       </Col>
     </Row>
@@ -306,7 +364,7 @@ const CfFirewallTemplatesBody: React.FC = () => {
         showIcon
         style={{ marginBottom: 16 }}
         message="Chọn template cần dùng ngay tại trang 'Firewall' (Tác vụ Cloudflare) khi áp dụng cho domain."
-        description={`Template "${defaultName}" không xoá được và luôn giữ đủ 3 rule nền - luôn có 1 lựa chọn an toàn để quay lại nếu 1 template tuỳ chỉnh có vấn đề.`}
+        description={`Template "${defaultName}" không xoá được - luôn có 1 lựa chọn an toàn để quay lại nếu 1 template tuỳ chỉnh có vấn đề.`}
       />
 
       <Spin spinning={loading}>
@@ -323,9 +381,12 @@ const CfFirewallTemplatesBody: React.FC = () => {
                     blocked_user_agents: t.blocked_user_agents,
                     blocked_paths: t.blocked_paths,
                     bot_fight_mode: t.bot_fight_mode,
-                    skip_safety_enabled: t.skip_safety_enabled,
-                    block_bad_ports_enabled: t.block_bad_ports_enabled,
-                    block_bad_ua_enabled: t.block_bad_ua_enabled,
+                    skip_paths: t.skip_paths,
+                    skip_verified_bot: t.skip_verified_bot,
+                    skip_whitelist_ip: t.skip_whitelist_ip,
+                    skip_asns: t.skip_asns,
+                    allowed_ports: t.allowed_ports,
+                    allowed_ua_substrings: t.allowed_ua_substrings,
                   });
                 }}
                 onDelete={() => handleDelete(t)}
@@ -347,7 +408,14 @@ const CfFirewallTemplatesBody: React.FC = () => {
           form={addForm}
           layout="vertical"
           onFinish={handleAdd}
-          initialValues={{ skip_safety_enabled: true, block_bad_ports_enabled: true, block_bad_ua_enabled: true }}
+          initialValues={{
+            skip_paths: ['/wp-json/'],
+            skip_verified_bot: true,
+            skip_whitelist_ip: true,
+            skip_asns: ['15169'],
+            allowed_ports: ['80', '443'],
+            allowed_ua_substrings: ['mozilla', 'opera'],
+          }}
         >
           <TemplateFormFields />
         </Form>
