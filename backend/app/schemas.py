@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -160,6 +161,38 @@ class CfAccountOut(BaseModel):
     zone_count: int
     # api_token is intentionally never exposed here - encrypted at rest,
     # and never sent back to the client once saved.
+
+
+class CfFirewallTemplateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    countries_blocked: list[str]
+    blocked_user_agents: list[str]
+    blocked_paths: list[str]
+    bot_fight_mode: bool
+    is_default: bool
+    created_by: str
+    created_at: datetime
+
+    # The 3 list fields are JSON-encoded in a Text column on the ORM side
+    # (see models.CfFirewallTemplate) - model_validate can't decode that on
+    # its own, so routers build this via from_row() instead of calling
+    # model_validate(row) directly on the ORM object.
+    @classmethod
+    def from_row(cls, row) -> "CfFirewallTemplateOut":
+        return cls(
+            id=row.id,
+            name=row.name,
+            countries_blocked=json.loads(row.countries_blocked),
+            blocked_user_agents=json.loads(row.blocked_user_agents),
+            blocked_paths=json.loads(row.blocked_paths),
+            bot_fight_mode=row.bot_fight_mode,
+            is_default=row.is_default,
+            created_by=row.created_by,
+            created_at=row.created_at,
+        )
 
 
 class DomainChangeOut(BaseModel):

@@ -388,6 +388,19 @@ declare namespace API {
     domain: string;
     status: 'ok' | 'error' | 'DRYRUN';
     note: string;
+    template: string;
+  };
+
+  type CfFirewallTemplateItem = {
+    id: number;
+    name: string;
+    countries_blocked: string[];
+    blocked_user_agents: string[];
+    blocked_paths: string[];
+    bot_fight_mode: boolean;
+    is_default: boolean;
+    created_by: string;
+    created_at: string;
   };
 
   type CfAuditRedirectFinding = {

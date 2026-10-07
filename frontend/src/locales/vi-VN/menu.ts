@@ -10,6 +10,7 @@ export default {
   'menu.data.cf-accounts': 'Tài khoản Cloudflare',
   'menu.data.cf-domains': 'Domain Cloudflare',
   'menu.data.cf-whitelist': 'Whitelist IP',
+  'menu.data.cf-firewall-templates': 'Template Firewall',
   'menu.monitor.job-history': 'Lịch sử Job',
   'menu.monitor.domain-changes': 'Thay đổi Domain',
   'menu.monitor.access-control': 'Kiểm soát truy cập',

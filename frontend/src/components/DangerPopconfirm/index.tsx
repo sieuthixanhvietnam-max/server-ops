@@ -13,19 +13,28 @@ const DangerPopconfirm: React.FC<{
   onConfirm: () => void;
   loading?: boolean;
   children: React.ReactElement;
-}> = ({ title, targets, onConfirm, loading, children }) => {
+  /** Extra content rendered below the target-count line - e.g. the
+   * Firewall page embeds a read-only summary of the selected template
+   * here, so whoever confirms sees what's about to be applied at the one
+   * moment they're guaranteed to look, instead of relying on them to have
+   * reviewed it earlier (they usually haven't - confirmed with the user). */
+  extra?: React.ReactNode;
+}> = ({ title, targets, onConfirm, loading, children, extra }) => {
   return (
     <Popconfirm
       title={title}
-      overlayStyle={{ maxWidth: 320 }}
+      overlayStyle={{ maxWidth: 360 }}
       description={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Không thể hoàn tác - sẽ áp dụng cho
-          </Typography.Text>
-          <Tag color="red" style={{ marginInlineEnd: 0 }}>
-            {targets.length} mục
-          </Tag>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Không thể hoàn tác - sẽ áp dụng cho
+            </Typography.Text>
+            <Tag color="red" style={{ marginInlineEnd: 0 }}>
+              {targets.length} mục
+            </Tag>
+          </div>
+          {extra && <div style={{ marginTop: 8 }}>{extra}</div>}
         </div>
       }
       onConfirm={onConfirm}

@@ -760,11 +760,65 @@ export async function triggerCfFirewallUpdate(
   mode: 'domains' | 'all_zones',
   domains: string[],
   dry_run: boolean,
+  template_id: number,
   options?: { [key: string]: any },
 ) {
   return request<{ job_id: number }>('/api/jobs/cf-firewall-update', {
     method: 'POST',
-    data: { mode, domains, dry_run },
+    data: { mode, domains, dry_run, template_id },
+    ...(options || {}),
+  });
+}
+
+/** GET /api/cf-firewall-templates */
+export async function listCfFirewallTemplates(options?: { [key: string]: any }) {
+  return request<{ data: API.CfFirewallTemplateItem[]; success: boolean }>('/api/cf-firewall-templates', {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/** POST /api/cf-firewall-templates */
+export async function createCfFirewallTemplate(
+  body: {
+    name: string;
+    countries_blocked?: string[];
+    blocked_user_agents?: string[];
+    blocked_paths?: string[];
+    bot_fight_mode?: boolean;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<API.CfFirewallTemplateItem>('/api/cf-firewall-templates', {
+    method: 'POST',
+    data: body,
+    ...(options || {}),
+  });
+}
+
+/** PUT /api/cf-firewall-templates/{id} */
+export async function updateCfFirewallTemplate(
+  id: number,
+  body: {
+    name?: string;
+    countries_blocked?: string[];
+    blocked_user_agents?: string[];
+    blocked_paths?: string[];
+    bot_fight_mode?: boolean;
+  },
+  options?: { [key: string]: any },
+) {
+  return request<API.CfFirewallTemplateItem>(`/api/cf-firewall-templates/${id}`, {
+    method: 'PUT',
+    data: body,
+    ...(options || {}),
+  });
+}
+
+/** DELETE /api/cf-firewall-templates/{id} */
+export async function deleteCfFirewallTemplate(id: number, options?: { [key: string]: any }) {
+  return request<{ success: boolean }>(`/api/cf-firewall-templates/${id}`, {
+    method: 'DELETE',
     ...(options || {}),
   });
 }

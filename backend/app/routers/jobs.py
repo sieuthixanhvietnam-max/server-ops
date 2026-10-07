@@ -19,13 +19,17 @@ from app.cf_account_service import (
     sync_all_accounts,
     sync_one_account,
 )
+from app.cf_firewall_template_service import get_default_template_params, template_to_params
 from app.cf_whitelist_service import get_active_whitelist_ips
 from app.config import settings
 from app.crypto import decrypt_token
 from app.database import SessionLocal, get_db
 from app.health_service import health_check_lock, persist_health_results
 from app.job_service import create_job, launch_job
-from app.models import CfAccount, CfZone, Domain, IndexerCredential, Job, JobTarget, MuPlugin, PluginZip, Server, ThemeZip
+from app.models import (
+    CfAccount, CfFirewallTemplate, CfZone, Domain, IndexerCredential, Job, JobTarget, MuPlugin, PluginZip, Server,
+    ThemeZip,
+)
 from app.ops import (
     cf_ops,
     index_ops,
@@ -197,6 +201,7 @@ class CfFirewallUpdateRequest(BaseModel):
     mode: Literal["domains", "all_zones"]
     domains: list[str] = []
     dry_run: bool = True
+    template_id: int
 
 
 class CfPurgeCacheRequest(BaseModel):
@@ -702,6 +707,7 @@ async def trigger_cf_add(
             api_token = decrypt_token(target_account.api_token_encrypted)
 
     whitelist_ips = get_active_whitelist_ips(db)
+    firewall_template = get_default_template_params(db)
 
     job = create_job(
         db, "cf_add",
@@ -718,7 +724,7 @@ async def trigger_cf_add(
             ctx.log(f"[skip] {d}: invalid domain format")
         return await asyncio.to_thread(
             cf_ops.add_domains, entries, ctx.log, whitelist_ips, body.dry_run, api_token, cf_account_id,
-            body.force_reconfigure, account_label,
+            body.force_reconfigure, account_label, firewall_template,
         )
 
     launch_job(job.id, worker)
@@ -788,6 +794,7 @@ async def trigger_cf_add_batch(
         raise HTTPException(status_code=400, detail="No valid domains in any group: " + ", ".join(all_invalid))
 
     whitelist_ips = get_active_whitelist_ips(db)
+    firewall_template = get_default_template_params(db)
 
     job = create_job(
         db, "cf_add",
@@ -810,6 +817,7 @@ async def trigger_cf_add_batch(
                 group_results = await asyncio.to_thread(
                     cf_ops.add_domains, rg["entries"], ctx.log, whitelist_ips, body.dry_run,
                     rg["api_token"], rg["cf_account_id"], body.force_reconfigure, rg["account_label"],
+                    firewall_template,
                 )
                 results.extend(group_results)
             except Exception as exc:
@@ -1084,6 +1092,11 @@ async def trigger_cf_firewall_update(
             detail="Chưa có IP whitelist nào đang bật - thêm ở trang Whitelist IP trước",
         )
 
+    template_row = db.get(CfFirewallTemplate, body.template_id)
+    if not template_row:
+        raise HTTPException(status_code=404, detail="Firewall template not found")
+    template = template_to_params(template_row)
+
     if body.mode == "domains":
         if not body.domains:
             raise HTTPException(status_code=400, detail="domains list is empty")
@@ -1093,26 +1106,31 @@ async def trigger_cf_firewall_update(
 
         job = create_job(
             db, "cf_firewall_update",
-            {"mode": "domains", "domains": body.domains, "dry_run": body.dry_run, "invalid": invalid},
+            {
+                "mode": "domains", "domains": body.domains, "dry_run": body.dry_run, "invalid": invalid,
+                "template": template["name"],
+            },
             username, get_client_ip(request),
         )
 
         async def worker(ctx):
             for d in invalid:
                 ctx.log(f"[skip] {d}: invalid domain format")
-            return await asyncio.to_thread(cf_ops.update_firewall, ctx.log, whitelist_ips, body.dry_run, valid)
+            return await asyncio.to_thread(
+                cf_ops.update_firewall, ctx.log, whitelist_ips, body.dry_run, valid, template
+            )
 
         launch_job(job.id, worker)
         return {"job_id": job.id}
 
     job = create_job(
         db, "cf_firewall_update",
-        {"mode": "all_zones", "dry_run": body.dry_run},
+        {"mode": "all_zones", "dry_run": body.dry_run, "template": template["name"]},
         username, get_client_ip(request),
     )
 
     async def worker(ctx):
-        return await asyncio.to_thread(cf_ops.update_firewall, ctx.log, whitelist_ips, body.dry_run, None)
+        return await asyncio.to_thread(cf_ops.update_firewall, ctx.log, whitelist_ips, body.dry_run, None, template)
 
     launch_job(job.id, worker)
     return {"job_id": job.id}

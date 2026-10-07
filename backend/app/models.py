@@ -235,6 +235,46 @@ class CfWhitelistIp(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 
+class CfFirewallTemplate(Base):
+    """A named, admin-editable variant of the rule set `cf_firewall_update`
+    applies to a zone (see cf_ops._build_firewall_rules). Only the knobs
+    below vary by template - port check, the generic non-browser-UA check,
+    and the safety "skip" list (whitelist IP / verified bot / Google ASN /
+    wp-json) stay fixed in code for every template regardless of what's
+    picked here, on purpose: whoever runs the Firewall page's "Chạy thật"
+    rarely re-reads the rule content before confirming (confirmed with the
+    user), so the one thing that must never vary per template is the safety
+    net that keeps a bad template from blocking Google or the office IP.
+
+    countries_blocked / blocked_user_agents / blocked_paths are stored as
+    JSON-encoded lists (json.dumps/json.loads at the router boundary, same
+    "list in a Text column" pattern as PicTeam.members) rather than a
+    separate child table - these are small, always-read-as-a-whole lists
+    with no need to query into individual elements.
+
+    blocked_user_agents exists because the generic non-browser-UA check
+    does NOT catch SEO crawler bots like AhrefsBot - its real UA string is
+    "Mozilla/5.0 (compatible; AhrefsBot/7.0; ...)", which contains "Mozilla"
+    and so passes the generic allowlist-style check unchanged. Blocking a
+    named bot needs its own explicit substring-block rule."""
+
+    __tablename__ = "cf_firewall_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    countries_blocked: Mapped[str] = mapped_column(Text, default="[]")
+    blocked_user_agents: Mapped[str] = mapped_column(Text, default="[]")
+    blocked_paths: Mapped[str] = mapped_column(Text, default="[]")
+    bot_fight_mode: Mapped[bool] = mapped_column(default=False)
+    # The one template that's seeded on startup from the original hardcoded
+    # ruleset and can never be deleted (see cf_firewall_template_service) -
+    # always a known-good fallback to pick if a custom template turns out
+    # to be wrong.
+    is_default: Mapped[bool] = mapped_column(default=False)
+    created_by: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
 class AllowedIp(Base):
     """IP allowlist for this internal admin tool itself - when
     settings.ip_allowlist_enforced is on, only requests from an active IP in

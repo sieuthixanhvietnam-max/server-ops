@@ -73,6 +73,12 @@ export default [
         path: '/data/cf-whitelist',
         component: './cf-whitelist',
       },
+      {
+        name: 'cf-firewall-templates',
+        icon: 'safety',
+        path: '/data/cf-firewall-templates',
+        component: './cf-firewall-templates',
+      },
     ],
   },
   {

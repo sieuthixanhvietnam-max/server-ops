@@ -259,9 +259,21 @@ class CFClient:
         r = self._patch(f"{CF_BASE}/{zone_id}/settings/always_use_https", json={"value": "on"})
         log("    HTTPS  always_use_https on" if r.get("success") else f"    [fail] HTTPS: {self._err_msg(r)}")
 
-    def _build_firewall_rules(self, whitelist_ips: list[str]):
+    def _build_firewall_rules(
+        self,
+        whitelist_ips: list[str],
+        countries_blocked: list[str],
+        blocked_user_agents: list[str],
+        blocked_paths: list[str],
+    ):
+        """The first 3 rules (skip-list, port check, generic non-browser-UA
+        check) are fixed for every template on purpose - see
+        models.CfFirewallTemplate's docstring for why. countries_blocked /
+        blocked_paths / blocked_user_agents come from whichever template the
+        caller resolved; any of the 3 being empty just omits that rule
+        (an empty Cloudflare set/OR-chain isn't meaningful to send)."""
         ips = " ".join(whitelist_ips)
-        return [
+        rules = [
             {
                 "description": "Skip: WP-JSON OR Bots OR Whitelist IPs OR Google ASN",
                 "expression": (
@@ -286,31 +298,84 @@ class CFClient:
                 ),
                 "action": "block", "enabled": True,
             },
-            {
-                "description": "Block country list",
-                "expression": 'ip.src.country in {"PH" "AE" "US" "AG" "MT" "CW" "GB" "DE" "CR" "CA" "SG" "FR"}',
-                "action": "block", "enabled": True,
-            },
-            {
-                "description": "Block xmlrpc.php",
-                "expression": 'http.request.uri.path contains "xmlrpc.php"',
-                "action": "block", "enabled": True,
-            },
         ]
+        if countries_blocked:
+            codes = " ".join(f'"{c}"' for c in countries_blocked)
+            rules.append({
+                "description": "Block country list (template)",
+                "expression": f"ip.src.country in {{{codes}}}",
+                "action": "block", "enabled": True,
+            })
+        if blocked_paths:
+            expr = " or ".join(f'http.request.uri.path contains "{p}"' for p in blocked_paths)
+            rules.append({
+                "description": "Block path list (template)",
+                "expression": expr,
+                "action": "block", "enabled": True,
+            })
+        if blocked_user_agents:
+            # Explicit named-bot block, separate from the generic
+            # non-browser-UA rule above - a bot like AhrefsBot ships a UA
+            # that itself contains "Mozilla" ("Mozilla/5.0 (compatible;
+            # AhrefsBot/7.0; +http://ahrefs.com/robot/)"), so it passes that
+            # generic check unaffected and needs its own substring match.
+            expr = " or ".join(f'lower(http.user_agent) contains "{ua.lower()}"' for ua in blocked_user_agents)
+            rules.append({
+                "description": "Block named bot user-agents (template)",
+                "expression": expr,
+                "action": "block", "enabled": True,
+            })
+        return rules
 
-    def set_firewall_rules_result(self, zone_id: str, whitelist_ips: list[str]) -> tuple[bool, str]:
-        """Same PUT as set_firewall_rules but returns (ok, msg) instead of
-        logging directly - used by callers (update_firewall) that need to
-        build their own per-domain result row."""
-        url = f"{CF_BASE}/{zone_id}/rulesets/phases/http_request_firewall_custom/entrypoint"
-        rules = self._build_firewall_rules(whitelist_ips)
-        r = self._put(url, json={"rules": rules})
+    def set_bot_fight_mode(self, zone_id: str, enabled: bool) -> tuple[bool, str]:
+        r = self._patch(f"{CF_BASE}/{zone_id}/settings/bot_fight_mode", json={"value": "on" if enabled else "off"})
         if r.get("success"):
-            return True, f"{len(rules)} rule(s) áp dụng"
+            return True, f"Bot Fight Mode {'on' if enabled else 'off'}"
         return False, self._err_msg(r)
 
-    def set_firewall_rules(self, zone_id: str, log, whitelist_ips: list[str]):
-        ok, msg = self.set_firewall_rules_result(zone_id, whitelist_ips)
+    def set_firewall_rules_result(
+        self,
+        zone_id: str,
+        whitelist_ips: list[str],
+        countries_blocked: list[str],
+        blocked_user_agents: list[str],
+        blocked_paths: list[str],
+        bot_fight_mode: bool,
+    ) -> tuple[bool, str]:
+        """Same PUT as set_firewall_rules but returns (ok, msg) instead of
+        logging directly - used by callers (update_firewall) that need to
+        build their own per-domain result row. Also applies bot_fight_mode
+        as a separate Cloudflare zone-setting call (it's not a custom
+        ruleset rule, a different API) - a failure there still fails the
+        overall result, since a template that asked for it and silently
+        didn't get it is exactly the kind of mismatch nobody would notice
+        later."""
+        url = f"{CF_BASE}/{zone_id}/rulesets/phases/http_request_firewall_custom/entrypoint"
+        rules = self._build_firewall_rules(whitelist_ips, countries_blocked, blocked_user_agents, blocked_paths)
+        r = self._put(url, json={"rules": rules})
+        ruleset_ok = bool(r.get("success"))
+        ruleset_msg = f"{len(rules)} rule(s) áp dụng" if ruleset_ok else self._err_msg(r)
+
+        bfm_ok, bfm_msg = self.set_bot_fight_mode(zone_id, bot_fight_mode)
+
+        if ruleset_ok and bfm_ok:
+            return True, f"{ruleset_msg} - {bfm_msg}"
+        parts = [p for p in (ruleset_msg if not ruleset_ok else None, bfm_msg if not bfm_ok else None) if p]
+        return False, "; ".join(parts) if parts else "lỗi không rõ"
+
+    def set_firewall_rules(
+        self,
+        zone_id: str,
+        log,
+        whitelist_ips: list[str],
+        countries_blocked: list[str],
+        blocked_user_agents: list[str],
+        blocked_paths: list[str],
+        bot_fight_mode: bool,
+    ):
+        ok, msg = self.set_firewall_rules_result(
+            zone_id, whitelist_ips, countries_blocked, blocked_user_agents, blocked_paths, bot_fight_mode
+        )
         log(f"    Firewall  {msg}" if ok else f"    [fail] Firewall: {msg}")
 
 
@@ -543,6 +608,7 @@ def add_domains(
     entries: list[dict], log, whitelist_ips: list[str], dry_run: bool = False,
     api_token: str | None = None, cf_account_id: str | None = None,
     force_reconfigure: bool = False, account_label: str | None = None,
+    firewall_template: dict | None = None,
 ) -> list[dict]:
     """entries: [{"domain", "ip"}] - create CF zone + DNS + SSL + firewall.
     api_token/cf_account_id let the caller target a specific (PIC-resolved)
@@ -552,7 +618,14 @@ def add_domains(
     on top of it anyway - for zones known to be half-configured (e.g. a
     prior run that failed partway through). account_label is just echoed
     back on every result row so the caller can tell which account each
-    domain landed in without re-deriving it."""
+    domain landed in without re-deriving it. firewall_template: the resolved
+    {"countries_blocked", "blocked_user_agents", "blocked_paths",
+    "bot_fight_mode"} dict to apply to the new zone's firewall - this flow
+    has no template picker of its own, so the caller always resolves the
+    "Mặc định" template here (see cf_firewall_template_service)."""
+    firewall_template = firewall_template or {
+        "countries_blocked": [], "blocked_user_agents": [], "blocked_paths": [], "bot_fight_mode": False,
+    }
     cf = CFClient(api_token)
     log(f"Adding {len(entries)} domain(s) to Cloudflare...")
 
@@ -598,7 +671,11 @@ def add_domains(
         cf.setup_dns(zone_id, domain, ip, log)
         cf.set_ssl_flexible(zone_id, log)
         cf.set_always_https(zone_id, log)
-        cf.set_firewall_rules(zone_id, log, whitelist_ips)
+        cf.set_firewall_rules(
+            zone_id, log, whitelist_ips,
+            firewall_template["countries_blocked"], firewall_template["blocked_user_agents"],
+            firewall_template["blocked_paths"], firewall_template["bot_fight_mode"],
+        )
 
         ns = []
         for _ in range(4):
@@ -895,30 +972,43 @@ def remove_redirects(domains: list[str], log, dry_run: bool = False) -> list[dic
 
 
 def update_firewall(
-    log, whitelist_ips: list[str], dry_run: bool = False, domains: list[str] | None = None
+    log, whitelist_ips: list[str], dry_run: bool = False, domains: list[str] | None = None,
+    template: dict | None = None,
 ) -> list[dict]:
-    """Re-applies the standard firewall ruleset (skip whitelist/bots/Google
-    ASN, block everything else risky) to zones. domains=None means "every
-    zone the master token can see" - ported from cftasks.py --update-fw
-    --all-zones, including its batching (tens of thousands of zones is the
-    real scale here, see _parallel_batched). Passing an explicit domain list
-    skips batching since that's always a small, deliberate set."""
+    """Re-applies the firewall ruleset (skip whitelist/bots/Google ASN,
+    block everything else risky per the resolved template) to zones.
+    domains=None means "every zone the master token can see" - ported from
+    cftasks.py --update-fw --all-zones, including its batching (tens of
+    thousands of zones is the real scale here, see _parallel_batched).
+    Passing an explicit domain list skips batching since that's always a
+    small, deliberate set. template: {"name", "countries_blocked",
+    "blocked_user_agents", "blocked_paths", "bot_fight_mode"} - "name" is
+    echoed into every result row so which template a job used is visible
+    afterward (in the job log/result/CSV export) without anyone having had
+    to check beforehand."""
+    template = template or {
+        "name": "Mặc định", "countries_blocked": [], "blocked_user_agents": [],
+        "blocked_paths": [], "bot_fight_mode": False,
+    }
     cf = CFClient()
 
     def _one(domain):
         zone_id = cf.get_zone_id(domain)
         if not zone_id:
             log(f"[fail] {domain}: zone not found")
-            return {"domain": domain, "status": "error", "note": "zone not found"}
+            return {"domain": domain, "status": "error", "note": "zone not found", "template": template["name"]}
         if dry_run:
-            log(f"[dry-run] would apply firewall to {domain} [{zone_id}]")
-            return {"domain": domain, "status": "DRYRUN", "note": "no changes made"}
-        ok, msg = cf.set_firewall_rules_result(zone_id, whitelist_ips)
+            log(f"[dry-run] would apply firewall template '{template['name']}' to {domain} [{zone_id}]")
+            return {"domain": domain, "status": "DRYRUN", "note": "no changes made", "template": template["name"]}
+        ok, msg = cf.set_firewall_rules_result(
+            zone_id, whitelist_ips, template["countries_blocked"], template["blocked_user_agents"],
+            template["blocked_paths"], template["bot_fight_mode"],
+        )
         if ok:
             log(f"[ ok ] {domain}: {msg}")
-            return {"domain": domain, "status": "ok", "note": msg}
+            return {"domain": domain, "status": "ok", "note": msg, "template": template["name"]}
         log(f"[fail] {domain}: {msg}")
-        return {"domain": domain, "status": "error", "note": msg}
+        return {"domain": domain, "status": "error", "note": msg, "template": template["name"]}
 
     if domains is not None:
         log(f"Áp dụng Firewall cho {len(domains)} domain(s)...")

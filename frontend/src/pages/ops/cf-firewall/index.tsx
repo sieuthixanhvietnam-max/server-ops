@@ -1,14 +1,17 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
+import FirewallTemplateSummary from '@/components/FirewallTemplateSummary';
 import JobLogPanel from '@/components/JobLogPanel';
 import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
-import { triggerCfFirewallUpdate } from '@/services/serverOps/api';
+import { listCfFirewallTemplates, triggerCfFirewallUpdate } from '@/services/serverOps/api';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
+import { WarningFilled } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, App, Button, Card, Input, Segmented, Table, Tag } from 'antd';
-import React, { useState } from 'react';
+import { useNavigate } from '@umijs/max';
+import { Alert, App, Button, Card, Input, Segmented, Select, Table, Tag, Typography } from 'antd';
+import React, { useEffect, useState } from 'react';
 
 const { TextArea } = Input;
 
@@ -34,15 +37,33 @@ const ALL_ZONES_LABEL = 'TOÀN BỘ ZONE TRONG ACCOUNT (quét lúc chạy job, c
 
 const CfFirewall: React.FC = () => {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const [mode, setMode] = usePersistedState<Mode>('cf-firewall:mode', 'domains');
   const [text, setText] = usePersistedState('cf-firewall:text', '');
   const [jobId, setJobId] = usePersistedState<number | undefined>('cf-firewall:jobId', undefined);
   const [running, setRunning] = useState(false);
   const job = useJobPolling(jobId);
 
+  const [templates, setTemplates] = useState<API.CfFirewallTemplateItem[]>([]);
+  const [templateId, setTemplateId] = usePersistedState<number | undefined>('cf-firewall:templateId', undefined);
+
+  useEffect(() => {
+    listCfFirewallTemplates().then((res) => {
+      const data = res.data || [];
+      setTemplates(data);
+      // Lần đầu chưa chọn gì (hoặc template đã chọn trước đó bị xoá) - về
+      // template mặc định cho an toàn, không để trống.
+      if (!data.some((t) => t.id === templateId)) {
+        setTemplateId(data.find((t) => t.is_default)?.id ?? data[0]?.id);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedTemplate = templates.find((t) => t.id === templateId);
   const domains = parseDomains(text);
   const isBusy = running || job?.status === 'running' || job?.status === 'pending';
-  const canRun = mode === 'all_zones' || domains.length > 0;
+  const canRun = (mode === 'all_zones' || domains.length > 0) && !!templateId;
 
   const changeMode = (next: Mode) => {
     setMode(next);
@@ -54,9 +75,13 @@ const CfFirewall: React.FC = () => {
       message.warning('Nhập ít nhất 1 domain (mỗi dòng 1 domain)');
       return;
     }
+    if (!templateId) {
+      message.warning('Chọn 1 template Firewall trước');
+      return;
+    }
     setRunning(true);
     try {
-      const res = await triggerCfFirewallUpdate(mode, mode === 'domains' ? domains : [], dryRun);
+      const res = await triggerCfFirewallUpdate(mode, mode === 'domains' ? domains : [], dryRun, templateId);
       setJobId(res.job_id);
       if (!dryRun && mode === 'domains') {
         setText('');
@@ -83,8 +108,8 @@ const CfFirewall: React.FC = () => {
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="Áp lại bộ Firewall rule chuẩn (whitelist bot/office IP, chặn country/UA/xmlrpc bất thường) lên zone."
-          description="Whitelist IP lấy từ trang 'Whitelist IP (Firewall)' tại thời điểm chạy - sửa danh sách đó xong thì quay lại đây chạy để áp dụng, việc sửa không tự động áp lên zone đang có."
+          message="Áp bộ Firewall rule lên zone - chọn template bên dưới cho phần chặn theo quốc gia/bot/path/Bot Fight Mode."
+          description="Whitelist IP, chặn port lạ và chặn UA không giống browser thật luôn cố định cho mọi template (không đổi được tại đây). Whitelist IP lấy từ trang 'Whitelist IP (Firewall)' tại thời điểm chạy - sửa xong quay lại đây chạy lại để áp dụng, việc sửa không tự động áp lên zone đang có."
         />
 
         <Segmented
@@ -97,6 +122,25 @@ const CfFirewall: React.FC = () => {
           block
           style={{ marginBottom: 12 }}
         />
+
+        <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Typography.Text strong>Template Firewall:</Typography.Text>
+          <Select
+            style={{ minWidth: 280 }}
+            value={templateId}
+            onChange={setTemplateId}
+            options={templates.map((t) => ({ value: t.id, label: t.is_default ? `${t.name} (mặc định)` : t.name }))}
+            placeholder="Chọn template..."
+          />
+          <Button size="small" type="link" onClick={() => navigate('/data/cf-firewall-templates')}>
+            Quản lý template
+          </Button>
+        </div>
+        {selectedTemplate && (
+          <Card size="small" style={{ marginBottom: 12 }}>
+            <FirewallTemplateSummary tpl={selectedTemplate} />
+          </Card>
+        )}
 
         {mode === 'domains' ? (
           <TextArea
@@ -123,6 +167,27 @@ const CfFirewall: React.FC = () => {
             targets={mode === 'domains' ? domains : [ALL_ZONES_LABEL]}
             onConfirm={() => run(false)}
             loading={running}
+            extra={
+              selectedTemplate && (
+                <div>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    Template "{selectedTemplate.name}" sẽ áp dụng:
+                  </Typography.Text>
+                  <div style={{ marginTop: 4 }}>
+                    <FirewallTemplateSummary tpl={selectedTemplate} />
+                  </div>
+                  {mode === 'all_zones' && !selectedTemplate.is_default && (
+                    <Alert
+                      type="error"
+                      showIcon
+                      icon={<WarningFilled />}
+                      style={{ marginTop: 8 }}
+                      message="Đang áp template TUỲ CHỈNH cho TOÀN BỘ zone trong account - kiểm tra lại nội dung template phía trên trước khi tiếp tục."
+                    />
+                  )}
+                </div>
+              )
+            }
           >
             <Button danger type="primary" loading={isBusy} disabled={!canRun}>
               Chạy thật
@@ -135,9 +200,10 @@ const CfFirewall: React.FC = () => {
         {(job?.status === 'success' || job?.status === 'failed') && (
           <>
             <JobResultActions
-              headers={['Domain', 'Trạng thái', 'Ghi chú']}
+              headers={['Domain', 'Template', 'Trạng thái', 'Ghi chú']}
               rows={(job.result as API.CfFirewallUpdateResult[]).map((r) => [
                 r.domain,
+                r.template || '',
                 STATUS_LABELS[r.status] || r.status,
                 r.note || '',
               ])}
@@ -152,6 +218,7 @@ const CfFirewall: React.FC = () => {
               pagination={DEFAULT_PAGINATION}
               columns={[
                 { title: 'Domain', dataIndex: 'domain' },
+                { title: 'Template', dataIndex: 'template' },
                 {
                   title: 'Trạng thái',
                   dataIndex: 'status',
