@@ -12,6 +12,7 @@ import {
   CrownOutlined,
   DeleteOutlined,
   DesktopOutlined,
+  DownOutlined,
   EditOutlined,
   FilterOutlined,
   GlobalOutlined,
@@ -21,6 +22,7 @@ import {
   SafetyCertificateOutlined,
   TagOutlined,
   ThunderboltOutlined,
+  UpOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
@@ -146,49 +148,84 @@ const ListRow: React.FC<{
 /** Cùng kiểu header như ListRow, nhưng cho whitelist_ips - mỗi IP có thêm 1
  * ô "tên/ghi chú" đi kèm (hiện khi hover ở nơi khác), nên không thể dùng
  * Select tags (chỉ nhận string trơn) mà cần Form.List để sửa từng cặp
- * {ip, label} độc lập. */
-const WhitelistIpField: React.FC = () => (
-  <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fafafa', marginBottom: 8 }}>
-    <Space align="start" style={{ marginBottom: 6 }}>
-      <span style={{ fontSize: 16, color: '#1890ff', marginTop: 2 }}>
-        <SafetyCertificateOutlined />
-      </span>
-      <div>
-        <Typography.Text strong>IP Whitelist</Typography.Text>
-        <div>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            IP văn phòng/bot được bỏ qua mọi rule chặn, riêng cho preset này. Tên/ghi chú hiện khi hover vào IP.
-          </Typography.Text>
-        </div>
+ * {ip, label} độc lập.
+ *
+ * Danh sách này có thể dài (36 IP cho preset Mặc định) - nếu luôn mở hết
+ * thì riêng mục này đã dài hơn tất cả các mục khác cộng lại. Thu gọn mặc
+ * định (chỉ hiện số lượng), mở ra thì cuộn trong khung cao cố định thay vì
+ * kéo dài cả trang - giữ nút "Thêm IP" ngoài khung cuộn để luôn bấm được
+ * ngay, không cần cuộn xuống cuối danh sách. */
+const WhitelistIpField: React.FC = () => {
+  const [open, setOpen] = useState(false);
+  const whitelistIps: API.WhitelistIpEntry[] = Form.useWatch('whitelist_ips') || [];
+
+  return (
+    <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fafafa', marginBottom: 8 }}>
+      <div
+        style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', cursor: 'pointer' }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Space align="start">
+          <span style={{ fontSize: 16, color: '#1890ff', marginTop: 2 }}>
+            <SafetyCertificateOutlined />
+          </span>
+          <div>
+            <Typography.Text strong>IP Whitelist</Typography.Text>
+            <div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                IP văn phòng/bot được bỏ qua mọi rule chặn, riêng cho preset này. Tên/ghi chú hiện khi hover vào IP.
+              </Typography.Text>
+            </div>
+          </div>
+        </Space>
+        <Space>
+          <Tag>{whitelistIps.length} IP</Tag>
+          {open ? <UpOutlined /> : <DownOutlined />}
+        </Space>
       </div>
-    </Space>
-    <Form.List name="whitelist_ips">
-      {(fields, { add, remove }) => (
-        <>
-          {fields.map((field) => (
-            <Space key={field.key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
-              <Form.Item
-                {...field}
-                name={[field.name, 'ip']}
-                rules={[{ required: true, message: 'Nhập IP' }]}
-                noStyle
+      {open && (
+        <Form.List name="whitelist_ips">
+          {(fields, { add, remove }) => (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+                {fields.map((field) => (
+                  <Space key={field.key} style={{ display: 'flex', marginBottom: 6 }} align="baseline">
+                    <Form.Item
+                      {...field}
+                      name={[field.name, 'ip']}
+                      rules={[{ required: true, message: 'Nhập IP' }]}
+                      noStyle
+                    >
+                      <Input placeholder="VD: 192.177.71.221" size="small" style={{ width: 160, fontFamily: 'monospace' }} />
+                    </Form.Item>
+                    <Form.Item {...field} name={[field.name, 'label']} noStyle>
+                      <Input placeholder="Tên/ghi chú (tuỳ chọn)" size="small" style={{ width: 160 }} />
+                    </Form.Item>
+                    <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                  </Space>
+                ))}
+                {fields.length === 0 && (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    Chưa có IP nào.
+                  </Typography.Text>
+                )}
+              </div>
+              <Button
+                type="dashed"
+                size="small"
+                icon={<PlusOutlined />}
+                style={{ marginTop: 8 }}
+                onClick={() => add({ ip: '', label: '' })}
               >
-                <Input placeholder="VD: 192.177.71.221" style={{ width: 170, fontFamily: 'monospace' }} />
-              </Form.Item>
-              <Form.Item {...field} name={[field.name, 'label']} noStyle>
-                <Input placeholder="Tên/ghi chú (tuỳ chọn)" style={{ width: 170 }} />
-              </Form.Item>
-              <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
-            </Space>
-          ))}
-          <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={() => add({ ip: '', label: '' })}>
-            Thêm IP
-          </Button>
-        </>
+                Thêm IP
+              </Button>
+            </div>
+          )}
+        </Form.List>
       )}
-    </Form.List>
-  </div>
-);
+    </div>
+  );
+};
 
 const PresetFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) => (
   <>
