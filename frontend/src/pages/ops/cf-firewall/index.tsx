@@ -8,10 +8,10 @@ import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import { listFirewallPresets, triggerCfFirewallUpdate } from '@/services/serverOps/api';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
-import { CheckCircleFilled, CloseCircleFilled, FileSearchOutlined, SettingOutlined, WarningFilled } from '@ant-design/icons';
+import { FileSearchOutlined, SettingOutlined, WarningFilled } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { useNavigate } from '@umijs/max';
-import { Alert, App, Button, Card, Col, Divider, Input, Row, Segmented, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Col, Divider, Input, Row, Segmented, Space, Table, Tag, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 
 const { TextArea } = Input;
@@ -22,18 +22,6 @@ const STATUS_LABELS: Record<string, string> = {
   ok: 'Đã áp dụng',
   DRYRUN: 'Dry-run',
   error: 'Lỗi',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  ok: '#3f8600',
-  DRYRUN: '#1890ff',
-  error: '#cf1322',
-};
-
-const STATUS_ICONS: Record<string, React.ReactNode> = {
-  ok: <CheckCircleFilled />,
-  DRYRUN: <FileSearchOutlined />,
-  error: <CloseCircleFilled />,
 };
 
 const parseDomains = (text: string) =>
@@ -80,10 +68,6 @@ const CfFirewall: React.FC = () => {
   const canRun = (mode === 'all_zones' || domains.length > 0) && !!presetId;
 
   const results = (job?.result as API.CfFirewallUpdateResult[]) || [];
-  const statusCounts = results.reduce<Record<string, number>>((acc, r) => {
-    acc[r.status] = (acc[r.status] || 0) + 1;
-    return acc;
-  }, {});
 
   const changeMode = (next: Mode) => {
     setMode(next);
@@ -225,21 +209,6 @@ const CfFirewall: React.FC = () => {
         {(job?.status === 'success' || job?.status === 'failed') && (
           <>
             <Divider style={{ margin: '16px 0' }} />
-            <Row gutter={32} style={{ marginBottom: 12 }}>
-              <Col>
-                <Statistic title="Tổng" value={results.length} />
-              </Col>
-              {Object.entries(statusCounts).map(([status, count]) => (
-                <Col key={status}>
-                  <Statistic
-                    title={STATUS_LABELS[status] || status}
-                    value={count}
-                    valueStyle={{ color: STATUS_COLORS[status] }}
-                    prefix={STATUS_ICONS[status]}
-                  />
-                </Col>
-              ))}
-            </Row>
             <JobResultActions
               headers={['Domain', 'Preset', 'Trạng thái', 'Ghi chú']}
               rows={results.map((r) => [r.domain, r.preset || '', STATUS_LABELS[r.status] || r.status, r.note || ''])}
