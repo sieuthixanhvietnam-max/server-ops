@@ -2,6 +2,7 @@
 .env
 .env.*
 *.env
+.claude/settings.local.json
 
 # Python
 backend/venv/
