@@ -320,7 +320,7 @@ def _connect_or_fail(ip, profile, log, label):
 
 def migrate_wpsite(
     entries: list[dict], log, dry_run: bool = False,
-    on_start=lambda domain: None, on_finish=lambda domain, status, note="": None,
+    on_start=lambda idx, domain: None, on_finish=lambda idx, domain, status, note="": None,
 ) -> list[dict]:
     """entries: [{"domain", "source_ip", "source_profile", "dest_ip", "dest_profile"}]
 
@@ -330,7 +330,14 @@ def migrate_wpsite(
     in the pair sequentially (DB dump + full file rsync is I/O-heavy, same
     reasoning as clone/restore), then a one-time teardown in `finally` so
     the temp trust/firewall hole never outlives the job even on failure.
-    Different pairs share nothing and run fully in parallel."""
+    Different pairs share nothing and run fully in parallel.
+
+    on_start/on_finish take (idx, domain, ...) - idx (this entry's position
+    in `entries`) identifies the JobTarget row unambiguously, since matching
+    by domain string alone (the old signature) races when the same domain
+    appears twice in one batch: two domain_pool threads would both match
+    "the pending/running row for that label" and can flip each other's
+    row to the wrong status."""
     results: list[dict | None] = [None] * len(entries)
 
     groups = defaultdict(list)
@@ -353,7 +360,7 @@ def migrate_wpsite(
                 log(f"[fail] {domain}: invalid domain format")
                 results[idx] = {"domain": domain, "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                   "status": "FAIL", "note": "invalid domain format"}
-                on_finish(domain, "failed", "invalid domain format")
+                on_finish(idx, domain, "failed", "invalid domain format")
                 continue
             valid.append((idx, e))
         if not valid:
@@ -373,7 +380,7 @@ def migrate_wpsite(
                 for idx, e in valid:
                     results[idx] = {"domain": e["domain"], "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                       "status": "FAIL", "note": f"source connect failed: {err}"}
-                    on_finish(e["domain"], "failed", f"source connect failed: {err}")
+                    on_finish(idx, e["domain"], "failed", f"source connect failed: {err}")
                 return
 
             dst_user, dst_key, err = _connect_or_fail(dest_ip, dest_profile, log, f"dest {dest_ip}")
@@ -381,7 +388,7 @@ def migrate_wpsite(
                 for idx, e in valid:
                     results[idx] = {"domain": e["domain"], "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                       "status": "FAIL", "note": f"dest connect failed: {err}"}
-                    on_finish(e["domain"], "failed", f"dest connect failed: {err}")
+                    on_finish(idx, e["domain"], "failed", f"dest connect failed: {err}")
                 return
 
             # ---- SETUP (once per pair): temporary SSH trust source -> dest ----
@@ -393,7 +400,7 @@ def migrate_wpsite(
                 for idx, e in valid:
                     results[idx] = {"domain": e["domain"], "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                       "status": "FAIL", "note": "could not get source SSH pubkey"}
-                    on_finish(e["domain"], "failed", "could not get source SSH pubkey")
+                    on_finish(idx, e["domain"], "failed", "could not get source SSH pubkey")
                 return
 
             rc, _out = ssh_ops.run_remote(dest_ip, dst_user, dst_key, ADD_PUBKEY_SCRIPT,
@@ -402,7 +409,7 @@ def migrate_wpsite(
                 for idx, e in valid:
                     results[idx] = {"domain": e["domain"], "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                       "status": "FAIL", "note": "could not add source key to dest authorized_keys"}
-                    on_finish(e["domain"], "failed", "could not add source key to dest authorized_keys")
+                    on_finish(idx, e["domain"], "failed", "could not add source key to dest authorized_keys")
                 return
             log(f"[ ok ] {source_ip} -> {dest_ip}: SSH trust established")
 
@@ -410,7 +417,7 @@ def migrate_wpsite(
                 for idx, e in valid:
                     results[idx] = {"domain": e["domain"], "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                       "status": "FAIL", "note": "could not open destination GCP firewall for source IP"}
-                    on_finish(e["domain"], "failed", "could not open destination firewall for source IP")
+                    on_finish(idx, e["domain"], "failed", "could not open destination firewall for source IP")
                 ssh_ops.run_remote(dest_ip, dst_user, dst_key, REMOVE_PUBKEY_SCRIPT,
                                      args=[pubkey], use_sudo=True, timeout=30)
                 return
@@ -428,7 +435,7 @@ def migrate_wpsite(
                     domain = e["domain"]
                     label = f"{domain} ({source_ip} -> {dest_ip})"
                     log(f"[step] {label}: migrating...")
-                    on_start(domain)
+                    on_start(idx, domain)
 
                     rc, out = ssh_ops.run_remote_streaming(
                         source_ip, src_user, src_key, RSYNC_SCRIPT,
@@ -441,7 +448,7 @@ def migrate_wpsite(
                         log(f"[fail] {label}: rsync failed - {err_line}")
                         results[idx] = {"domain": domain, "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                           "status": "FAIL", "note": f"rsync: {err_line}"}
-                        on_finish(domain, "failed", f"rsync: {err_line}")
+                        on_finish(idx, domain, "failed", f"rsync: {err_line}")
                         return
 
                     with ssh_ops.wptt_create_lock(dest_ip):
@@ -456,7 +463,7 @@ def migrate_wpsite(
                         log(f"[fail] {label}: import failed - {err_line}")
                         results[idx] = {"domain": domain, "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                           "status": "FAIL", "note": f"import: {err_line}"}
-                        on_finish(domain, "failed", f"import: {err_line}")
+                        on_finish(idx, domain, "failed", f"import: {err_line}")
                         return
 
                     log(f"[ ok ] {label}: files + DB migrated")
@@ -521,7 +528,7 @@ def migrate_wpsite(
                             "cf_dns": cf.get("status", "?"), "verify": verify,
                             "note": "",
                         }
-                        on_finish(domain, "success", verify["note"])
+                        on_finish(idx, domain, "success", verify["note"])
                     else:
                         note = "site không phản hồi HTTP sau migrate - DNS KHÔNG đổi, nguồn vẫn phục vụ traffic. Kiểm tra rồi chạy lại."
                         results[idx] = {
@@ -534,7 +541,7 @@ def migrate_wpsite(
                         # caveat (site not responding, DNS deliberately left
                         # untouched), not a failed migration, so this counts
                         # as a finished target for progress-bar purposes.
-                        on_finish(domain, "success", note)
+                        on_finish(idx, domain, "success", note)
             finally:
                 # ---- CLEANUP (always, even on error) ----
                 log(f"[info] {source_ip} -> {dest_ip}: cleaning up temporary access...")
@@ -547,7 +554,7 @@ def migrate_wpsite(
                 if results[idx] is None:
                     results[idx] = {"domain": e["domain"], "source_ip": source_ip, "dest_ip": dest_ip, "source_server": source_server_name,
                                       "status": "FAIL", "note": f"unexpected error: {exc}"}
-                    on_finish(e["domain"], "failed", f"unexpected error: {exc}")
+                    on_finish(idx, e["domain"], "failed", f"unexpected error: {exc}")
 
     with ThreadPoolExecutor(max_workers=max(1, len(groups))) as pool:
         futures = [pool.submit(_run_group, group) for group in groups.values()]

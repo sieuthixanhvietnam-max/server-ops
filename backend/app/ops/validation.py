@@ -1,3 +1,4 @@
+import ipaddress
 import re
 
 # Conservative hostname/domain whitelist: labels of letters/digits/hyphens,
@@ -45,10 +46,13 @@ def is_template_domain(domain: str) -> bool:
 
 
 def is_valid_ip(ip: str) -> bool:
-    parts = ip.strip().split(".")
-    if len(parts) != 4:
-        return False
+    """IPv4Address (not the bare int()/split parsing used before) correctly
+    rejects non-canonical octets like '192.168.001.1' - a leading-zero IP
+    that used to pass this check, then get saved verbatim into a firewall
+    whitelist/ACL and fail Cloudflare's filter-expression parser later,
+    breaking the entire ruleset for every domain sharing that preset."""
     try:
-        return all(0 <= int(p) <= 255 for p in parts)
+        ipaddress.IPv4Address(ip.strip())
+        return True
     except ValueError:
         return False

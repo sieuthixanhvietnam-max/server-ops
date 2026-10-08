@@ -26,7 +26,7 @@ def capture_current_week(db: Session) -> None:
     numbers stay fresh all week - past weeks are never touched again once
     their week ends, which is what freezes them."""
     week_start = week_start_of(datetime.now(timezone.utc))
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for provider in TRACKED_PROVIDERS:
         server_count = db.execute(
             select(func.count()).select_from(Server).where(Server.provider == provider)
@@ -109,7 +109,7 @@ def backfill_domain_history(db: Session) -> None:
     this_week = week_start_of(datetime.now(timezone.utc))
     weeks = sorted({ws for (_, ws) in per_week} | {this_week}, reverse=True)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for provider in TRACKED_PROVIDERS:
         running = db.execute(
             select(func.count()).select_from(Domain).where(Domain.provider == provider)

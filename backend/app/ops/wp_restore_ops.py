@@ -89,7 +89,11 @@ fi
 R2_PATH="r2:$R2_BUCKET/$SRC_SERVER/$DOMAIN/$DATE"
 rclone ls "$R2_PATH/" --quiet &>/dev/null || { echo "RESULT|FAIL|not_found|backup not found: $R2_PATH"; exit 12; }
 
-cleanup() { rm -rf "$TMP_BASE/$DOMAIN" 2>/dev/null || true; }
+TEMP_CNF=""
+cleanup() {
+    rm -rf "$TMP_BASE/$DOMAIN" 2>/dev/null || true
+    rm -f "$TEMP_CNF" 2>/dev/null || true
+}
 trap cleanup EXIT INT TERM
 mkdir -p "$TMP_BASE/$DOMAIN"
 
@@ -184,11 +188,29 @@ bash /etc/wptt/wptt-phanquyen "$DOMAIN" >/dev/null 2>&1 || true
 rm -rf "/usr/local/lsws/$DOMAIN/luucache" 2>/dev/null || true
 echo "[ ok ] Done"
 
+echo "[step] Verifying DB credentials actually work..."
+# Same bug class as the AES-decrypt incident (job #2788, fixed in
+# wp_migrate_ops.py's [6/6]) - re-reads whatever wp-config.php actually ended
+# up with (written by wptt-ket-noi above) and tries to log in with THAT,
+# instead of trusting $DB_Password_plain (used only for CREATE USER) matches
+# what landed in the file. A silent mismatch here used to still print
+# RESULT|OK with TABLE_COUNT=0/SITEURL=unknown - indistinguishable from a
+# genuinely empty site.
+WP_DB_NAME=$(grep -oP "define\\(\\s*'DB_NAME',\\s*'\\K[^']+" "$WP_PATH/wp-config.php" 2>/dev/null || true)
+WP_DB_USER=$(grep -oP "define\\(\\s*'DB_USER',\\s*'\\K[^']+" "$WP_PATH/wp-config.php" 2>/dev/null || true)
+WP_DB_PASS=$(grep -oP "define\\(\\s*'DB_PASSWORD',\\s*'\\K[^']+" "$WP_PATH/wp-config.php" 2>/dev/null || true)
+if [[ -z "$WP_DB_NAME" || -z "$WP_DB_USER" || -z "$WP_DB_PASS" ]]; then
+    echo "RESULT|FAIL|verify|wp-config.php missing DB credentials after wptt-ket-noi"; exit 24
+fi
+if ! mariadb -u "$WP_DB_USER" -p"$WP_DB_PASS" -h localhost "$WP_DB_NAME" -e "SELECT 1;" >/dev/null 2>&1; then
+    echo "RESULT|FAIL|verify|wp-config.php DB credentials do not authenticate after restore"; exit 24
+fi
+
 TABLE_PREFIX=$(grep -E '^\\$table_prefix\\s*=' "$WP_PATH/wp-config.php" 2>/dev/null \
     | sed "s/.*'\\([^']*\\)'.*/\\1/" | head -1 || true)
 [[ -z "${TABLE_PREFIX:-}" ]] && TABLE_PREFIX="wp_"
-TABLE_COUNT=$(mariadb -u "$DB_User_web" -p"$DB_Password_plain" "$DB_Name_web" -e "SHOW TABLES;" 2>/dev/null | wc -l)
-SITEURL=$(mariadb -u "$DB_User_web" -p"$DB_Password_plain" "$DB_Name_web" \
+TABLE_COUNT=$(mariadb -u "$WP_DB_USER" -p"$WP_DB_PASS" -h localhost "$WP_DB_NAME" -e "SHOW TABLES;" 2>/dev/null | wc -l)
+SITEURL=$(mariadb -u "$WP_DB_USER" -p"$WP_DB_PASS" -h localhost "$WP_DB_NAME" \
     -e "SELECT option_value FROM \\`${TABLE_PREFIX}options\\` WHERE option_name='siteurl';" 2>/dev/null | tail -1 || echo "unknown")
 
 echo "RESULT|OK|$DOMAIN|$DATE|$DB_Name_web|$TABLE_COUNT|$SITEURL"

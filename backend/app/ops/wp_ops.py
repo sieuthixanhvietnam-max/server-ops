@@ -100,7 +100,6 @@ CHANGEPASS_SCRIPT = """#!/bin/bash
 set -o pipefail
 DOMAIN="$1"
 NEW_PASSWORD="$2"
-ADMIN_USERNAME="$3"
 
 [[ -f /etc/wptt/.wptt.conf ]] && . /etc/wptt/.wptt.conf 2>/dev/null || true
 
@@ -136,23 +135,13 @@ if ! command -v wp &>/dev/null; then
     exit 1
 fi
 
-if [[ -z "$ADMIN_USERNAME" ]]; then
-    mapfile -t admin_users < <(wp user list --role=administrator --fields=user_login \
-        --allow-root --path="$path" 2>/dev/null | sed '1d' | sort -uV)
-    if [[ ${#admin_users[@]} -eq 0 ]]; then
-        echo "RESULT|FAIL|$DOMAIN|-|-|no admin user"
-        exit 1
-    fi
-    CURRENT_ADMIN="${admin_users[0]}"
-else
-    user_check=$(wp user get "$ADMIN_USERNAME" --field=user_login \
-        --allow-root --path="$path" 2>/dev/null)
-    if [[ -z "$user_check" ]]; then
-        echo "RESULT|FAIL|$DOMAIN|$ADMIN_USERNAME|-|user not found"
-        exit 1
-    fi
-    CURRENT_ADMIN="$ADMIN_USERNAME"
+mapfile -t admin_users < <(wp user list --role=administrator --fields=user_login \
+    --allow-root --path="$path" 2>/dev/null | sed '1d' | sort -uV)
+if [[ ${#admin_users[@]} -eq 0 ]]; then
+    echo "RESULT|FAIL|$DOMAIN|-|-|no admin user"
+    exit 1
 fi
+CURRENT_ADMIN="${admin_users[0]}"
 
 if wp user update "$CURRENT_ADMIN" --user_pass="$NEW_PASSWORD" \
     --path="$path" --allow-root >/dev/null 2>&1; then
@@ -454,7 +443,7 @@ def change_wppass(entries: list[dict], log, dry_run: bool = False) -> list[dict]
                 continue
 
             rc, output = ssh_ops.run_remote(
-                ip, user, key, CHANGEPASS_SCRIPT, args=[domain, password, ""], use_sudo=True, timeout=30
+                ip, user, key, CHANGEPASS_SCRIPT, args=[domain, password], use_sudo=True, timeout=30
             )
             result_line = next((l for l in output.splitlines() if l.startswith("RESULT|")), None)
             if result_line:

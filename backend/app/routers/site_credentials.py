@@ -70,7 +70,8 @@ def reveal_site_credential(credential_id: int, db: Session = Depends(get_db)):
 @router.delete("/{credential_id}")
 def delete_site_credential(credential_id: int, db: Session = Depends(get_db)):
     row = db.get(SiteCredential, credential_id)
-    if row is not None:
-        db.delete(row)
-        db.commit()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy credential")
+    db.delete(row)
+    db.commit()
     return {"success": True}

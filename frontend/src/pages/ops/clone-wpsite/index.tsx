@@ -479,8 +479,7 @@ const CloneWpsite: React.FC = () => {
         groupMap.get(key)!.targets.push(target);
       });
       setGroups(Array.from(groupMap.values()));
-    } catch (err: any) {
-      message.error(`Lỗi khi phân tích nhóm PIC: ${err?.message || err}`);
+    } catch {
       setGroups([]);
     } finally {
       setGroupsLoading(false);
@@ -499,8 +498,6 @@ const CloneWpsite: React.FC = () => {
       setExistingTargets((prev) => ({ ...prev, ...existsRes.data }));
       const freshMissing = uniqueTargets.filter((t) => zoneRes.data[t] && !zoneRes.data[t].has_zone);
       await resolveGroups(freshMissing);
-    } catch (err: any) {
-      message.error(`Lỗi khi kiểm tra trạng thái Cloudflare: ${err?.message || err}`);
     } finally {
       setChecking(false);
     }
@@ -565,8 +562,6 @@ const CloneWpsite: React.FC = () => {
         setRows([emptyRow()]);
         clearPersistedState('clone-wpsite:rows');
       }
-    } catch (err: any) {
-      message.error(`Lỗi khi chạy Clone: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }
@@ -630,8 +625,6 @@ const CloneWpsite: React.FC = () => {
         jobId: res.job_id,
         label: `${total} domain (${subGroups.length} nhóm IP/account)`,
       });
-    } catch (err: any) {
-      message.error(`Lỗi khi thêm domain vào Cloudflare: ${err?.message || err}`);
     } finally {
       setAddRunning(false);
     }

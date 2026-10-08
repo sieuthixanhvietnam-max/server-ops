@@ -148,8 +148,6 @@ const CreateWpsite: React.FC = () => {
     try {
       const res = await checkDomainsHttpBatch(templateOptions.map((d) => d.domain));
       setHealthMap(res.data || {});
-    } catch (err: any) {
-      message.error(`Lỗi khi kiểm tra tình trạng template: ${err?.message || err}`);
     } finally {
       setHealthChecking(false);
     }
@@ -161,8 +159,6 @@ const CreateWpsite: React.FC = () => {
     try {
       const res = await getTemplateInfoBatch(templateOptions.map((d) => d.domain));
       setInfoMap(res.data || {});
-    } catch (err: any) {
-      message.error(`Lỗi khi kiểm tra chi tiết template: ${err?.message || err}`);
     } finally {
       setInfoChecking(false);
     }
@@ -232,8 +228,6 @@ const CreateWpsite: React.FC = () => {
           setCfSuggesting(false);
         }
       }
-    } catch (err: any) {
-      message.error(`Lỗi khi kiểm tra trạng thái Cloudflare: ${err?.message || err}`);
     } finally {
       setChecking(false);
     }
@@ -245,8 +239,6 @@ const CreateWpsite: React.FC = () => {
     try {
       const res = await triggerCfAdd(missingZoneTargets, destIp, dryRun, cfAccountId);
       setCfJobId(res.job_id);
-    } catch (err: any) {
-      message.error(`Lỗi khi thêm domain vào Cloudflare: ${err?.message || err}`);
     } finally {
       setCfRunning(false);
     }
@@ -271,8 +263,6 @@ const CreateWpsite: React.FC = () => {
         clearPersistedState('create-wpsite:domainsText');
         clearPersistedState('create-wpsite:rows');
       }
-    } catch (err: any) {
-      message.error(`Lỗi khi tạo WordPress: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }

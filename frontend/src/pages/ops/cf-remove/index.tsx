@@ -60,8 +60,6 @@ const CfRemove: React.FC = () => {
         setText('');
         clearPersistedState('cf-remove:text');
       }
-    } catch (err: any) {
-      message.error(`Lỗi khi xoá domain khỏi Cloudflare: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }

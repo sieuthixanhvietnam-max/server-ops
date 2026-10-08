@@ -1,6 +1,7 @@
 import os
 
 from app.ops import ssh_ops
+from app.ops.validation import is_valid_domain
 
 # mu-plugins have no install/activate step of their own - any .php file that
 # sits directly in wp-content/mu-plugins/ (not a subfolder) is auto-loaded by
@@ -141,6 +142,13 @@ def install_mu_plugin(
         label = f"{domain} ({ip})"
         try:
             profile = e["profile"]
+
+            if not is_valid_domain(domain):
+                log(f"[fail] {label}: invalid domain format")
+                results.append(
+                    {"domain": domain, "ip": ip, "status": "FAIL", "note": "invalid domain format", "target_user_exists": None}
+                )
+                continue
 
             if dry_run:
                 results.append(

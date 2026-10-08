@@ -134,8 +134,6 @@ const ZoneTools: React.FC = () => {
         res = await triggerCfPurgeCache(domains, dryRun);
       }
       setJobId(res.job_id);
-    } catch (err: any) {
-      message.error(`Lỗi: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }

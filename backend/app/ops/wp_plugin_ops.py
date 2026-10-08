@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.config import settings
 from app.ops import ssh_ops, verify_ops
+from app.ops.validation import is_valid_domain
 
 # Adapted from the standalone plugintasks.py CLI script (python3/plugintasks.py).
 # Domain-exists check uses the same /etc/wptt/vhost/.$DOMAIN.conf convention as
@@ -522,6 +523,17 @@ def install_plugin_zip(entries: list[dict], zips: list[dict], log, dry_run: bool
         try:
             profile = e["profile"]
 
+            # Defense-in-depth, not the only gate: the router already runs
+            # every domain through is_valid_domain (resolve_plugin_entries
+            # in routers/jobs_common.py) before entries ever reach this
+            # function - but domain is interpolated unescaped into
+            # remote_zip's path below, so this function shouldn't rely on
+            # every future caller remembering to validate first either.
+            if not is_valid_domain(domain):
+                log(f"[fail] {label}: invalid domain format")
+                results.append({"domain": domain, "ip": ip, "status": "FAIL", "ok": [], "fail": [], "note": "invalid domain format"})
+                continue
+
             if dry_run:
                 results.append({"domain": domain, "ip": ip, "status": "DRYRUN", "ok": [], "fail": [], "note": "no changes made"})
                 continue
@@ -602,6 +614,11 @@ def install_theme_zip(entries: list[dict], zips: list[dict], log, dry_run: bool 
         label = f"{domain} ({ip})"
         try:
             profile = e["profile"]
+
+            if not is_valid_domain(domain):
+                log(f"[fail] {label}: invalid domain format")
+                results.append({"domain": domain, "ip": ip, "status": "FAIL", "ok": [], "fail": [], "note": "invalid domain format"})
+                continue
 
             if dry_run:
                 results.append({"domain": domain, "ip": ip, "status": "DRYRUN", "ok": [], "fail": [], "note": "no changes made"})

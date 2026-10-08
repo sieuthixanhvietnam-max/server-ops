@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 
 import requests
@@ -105,6 +106,26 @@ def _get_client(profile: str) -> _GCPFirewallClient | None:
     return _clients[profile]
 
 
+# add_ip/remove_ip above do a non-atomic GET-full-list -> mutate in Python ->
+# PATCH-full-list on sourceRanges (unlike Ali/DO, which call an atomic
+# authorize/revoke-single-rule API). wp_migrate_ops.py runs multiple domains
+# through a ThreadPoolExecutor (ssh_migrate_workers), so two migrates to the
+# same GCP destination can race: thread B's PATCH, built from a stale read,
+# can silently drop the IP thread A just added (or resurrect one thread A
+# just removed). Lock per rule_name (1:1 with profile here, but the rule is
+# the actual shared resource being mutated) for the whole read-modify-write,
+# same pattern as ssh_ops.wptt_create_lock.
+_rule_locks: dict[str, threading.Lock] = {}
+_rule_locks_meta_lock = threading.Lock()
+
+
+def _rule_lock(rule_name: str) -> threading.Lock:
+    with _rule_locks_meta_lock:
+        if rule_name not in _rule_locks:
+            _rule_locks[rule_name] = threading.Lock()
+        return _rule_locks[rule_name]
+
+
 def add_ip(profile: str, ip: str, log) -> bool:
     """No-op (returns True) for any profile without a configured GCP
     firewall rule - safe to call unconditionally for every migrate
@@ -114,7 +135,8 @@ def add_ip(profile: str, ip: str, log) -> bool:
         return True
     try:
         client = _get_client(profile)
-        ok, msg = client.add_ip(cfg["rule"], ip)
+        with _rule_lock(cfg["rule"]):
+            ok, msg = client.add_ip(cfg["rule"], ip)
         log(f"    [gcp-fw] {msg}")
         return ok
     except Exception as exc:
@@ -128,7 +150,8 @@ def remove_ip(profile: str, ip: str, log) -> bool:
         return True
     try:
         client = _get_client(profile)
-        ok, msg = client.remove_ip(cfg["rule"], ip)
+        with _rule_lock(cfg["rule"]):
+            ok, msg = client.remove_ip(cfg["rule"], ip)
         log(f"    [gcp-fw] {msg}")
         return ok
     except Exception as exc:

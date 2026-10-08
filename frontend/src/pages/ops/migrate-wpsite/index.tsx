@@ -48,7 +48,6 @@ const RemoveSourceCell: React.FC<{
   sourceServer?: string;
   bulkResult?: API.RemoveWpsiteResult;
 }> = ({ domain, sourceIp, sourceServer, bulkResult }) => {
-  const { message } = App.useApp();
   const [jobId, setJobId] = useState<number | undefined>(undefined);
   const [running, setRunning] = useState(false);
   const job = useJobPolling(jobId);
@@ -82,8 +81,6 @@ const RemoveSourceCell: React.FC<{
         try {
           const res = await triggerRemoveWpsite([domain], false, sourceServer ? { [domain]: sourceServer } : undefined);
           setJobId(res.job_id);
-        } catch (err: any) {
-          message.error(`Lỗi khi xoá nguồn: ${err?.message || err}`);
         } finally {
           setRunning(false);
         }
@@ -105,7 +102,6 @@ const BulkRemoveSourcePanel: React.FC<{
   rows: { domain: string; sourceServer?: string }[];
   onDone: (results: API.RemoveWpsiteResult[]) => void;
 }> = ({ rows, onDone }) => {
-  const { message } = App.useApp();
   const [jobId, setJobId] = useState<number | undefined>(undefined);
   const [running, setRunning] = useState(false);
   const job = useJobPolling(jobId);
@@ -133,8 +129,6 @@ const BulkRemoveSourcePanel: React.FC<{
         Object.keys(serverNames).length ? serverNames : undefined,
       );
       setJobId(res.job_id);
-    } catch (err: any) {
-      message.error(`Lỗi khi xoá nguồn hàng loạt: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }
@@ -363,8 +357,6 @@ const MigrateWpsite: React.FC = () => {
           );
         }
       }
-    } catch (err: any) {
-      message.error(`Lỗi khi chạy Migrate: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }

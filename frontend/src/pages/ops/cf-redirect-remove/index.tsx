@@ -60,8 +60,6 @@ const CfRedirectRemove: React.FC = () => {
         setText('');
         clearPersistedState('cf-redirect-remove:text');
       }
-    } catch (err: any) {
-      message.error(`Lỗi khi xoá redirect: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }

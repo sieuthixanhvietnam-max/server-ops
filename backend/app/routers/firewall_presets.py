@@ -67,9 +67,18 @@ def _normalize_countries(codes: list[str]) -> list[str]:
 
 
 def _normalize_strings(values: list[str]) -> list[str]:
+    """Dùng cho skip_paths/blocked_paths/blocked_user_agents/
+    allowed_ua_substrings - mọi giá trị này được ghép thẳng (không escape)
+    vào 1 chuỗi filter-expression của Cloudflare trong
+    cf_ops._build_firewall_rules (VD: `http.request.uri.path contains "{p}"`).
+    Dấu `"` phá vỡ chuỗi literal đó, `\\` có thể tạo escape-sequence không
+    định trước - chặn ngay từ lúc lưu preset thay vì để lỗi xảy ra lúc PUT
+    lên Cloudflare (lúc đó hỏng NGUYÊN ruleset của mọi domain dùng preset)."""
     out = []
     for v in values:
         v = v.strip()
+        if '"' in v or "\\" in v:
+            raise HTTPException(status_code=400, detail=f"'{v}' không được chứa dấu \" hoặc \\")
         if v and v not in out:
             out.append(v)
     return out

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -83,7 +83,7 @@ def upsert_cost(
     if row:
         row.amount_vnd = body.amount_vnd
         row.note = body.note
-        row.updated_at = datetime.utcnow()
+        row.updated_at = datetime.now(timezone.utc)
         row.created_by = admin.username
     else:
         db.add(
@@ -93,7 +93,7 @@ def upsert_cost(
                 amount_vnd=body.amount_vnd,
                 note=body.note,
                 created_by=admin.username,
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(timezone.utc),
             )
         )
     db.commit()
@@ -102,8 +102,10 @@ def upsert_cost(
 
 @router.delete("/{account_label}/{month}")
 def delete_cost(account_label: str, month: str, db: Session = Depends(get_db)):
-    db.execute(
+    result = db.execute(
         delete(ProviderCost).where(ProviderCost.account_label == account_label, ProviderCost.month == month)
     )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Không tìm thấy chi phí cho account/tháng này")
     db.commit()
     return {"success": True}

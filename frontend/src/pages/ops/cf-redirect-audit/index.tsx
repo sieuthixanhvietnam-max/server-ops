@@ -6,13 +6,12 @@ import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedStat
 import { triggerCfAuditRedirects, triggerCfRedirectInventory } from '@/services/serverOps/api';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, App, Button, Card, Empty, Segmented, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Empty, Segmented, Space, Table, Tag, Typography } from 'antd';
 import React, { useMemo, useState } from 'react';
 
 type Mode = 'anomalies' | 'full';
 
 const CfRedirectAudit: React.FC = () => {
-  const { message } = App.useApp();
   const [mode, setMode] = usePersistedState<Mode>('cf-redirect-audit:mode', 'anomalies');
   const [jobId, setJobId] = usePersistedState<number | undefined>('cf-redirect-audit:jobId', undefined);
   const [running, setRunning] = useState(false);
@@ -24,8 +23,6 @@ const CfRedirectAudit: React.FC = () => {
     try {
       const res = mode === 'anomalies' ? await triggerCfAuditRedirects() : await triggerCfRedirectInventory();
       setJobId(res.job_id);
-    } catch (err: any) {
-      message.error(`Lỗi: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }

@@ -79,8 +79,6 @@ const CfAdd: React.FC = () => {
         setText('');
         clearPersistedState('cf-add:text');
       }
-    } catch (err: any) {
-      message.error(`Lỗi khi thêm domain: ${err?.message || err}`);
     } finally {
       setRunning(false);
     }
