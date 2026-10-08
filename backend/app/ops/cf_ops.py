@@ -267,9 +267,17 @@ class CFClient:
         branches (whitelist-ip / verified-bot / ASN / path); any branch
         whose condition is off or has an empty list is dropped, and if all 4
         drop out the whole skip rule is omitted. allowed_ports/allowed_ua_
-        substrings work the same way as countries_blocked/blocked_paths/
-        blocked_user_agents below - an empty list omits that rule entirely
-        rather than sending a meaningless empty Cloudflare set."""
+        substrings/countries_blocked/blocked_paths/blocked_user_agents are
+        all independent OR-triggers for the SAME block action, so they're
+        merged into a single combined "block" rule rather than one Cloudflare
+        rule each - up to 5 separate rules here would exceed the 5-rule cap
+        Cloudflare enforces on http_request_firewall_custom for zones on
+        cheaper plans (confirmed live: "exceeded the maximum number of rules
+        ... 6 out of 5" with the skip rule + all 5). Combining preserves the
+        exact same semantics (any one condition true -> block) while
+        guaranteeing at most 2 rules total (skip + block) regardless of plan
+        tier. An empty list omits that category's clause entirely rather than
+        contributing a meaningless empty Cloudflare set."""
         skip_parts = []
         if preset["whitelist_ips"]:
             ips = " ".join(entry["ip"] for entry in preset["whitelist_ips"])
@@ -291,54 +299,51 @@ class CFClient:
                 "action": "skip", "enabled": True,
                 "action_parameters": {"ruleset": "current"},
             })
+
+        block_parts = []
         if preset["allowed_ports"]:
             ports = " ".join(preset["allowed_ports"])
-            rules.append({
-                "description": "Block ports outside allowed list (preset)",
-                "expression": f"not cf.edge.server_port in {{{ports}}}",
-                "action": "block", "enabled": True,
-            })
+            block_parts.append((f"not cf.edge.server_port in {{{ports}}}", "ports outside allowed list"))
         if preset["allowed_ua_substrings"]:
             ua_conds = " and ".join(
                 f'not lower(http.user_agent) contains "{s.lower()}"' for s in preset["allowed_ua_substrings"]
             )
-            rules.append({
-                "description": "Block UA not matching allowed browser substrings (preset)",
-                "expression": f'(http.user_agent eq "") or ({ua_conds})',
-                "action": "block", "enabled": True,
-            })
+            block_parts.append((f'(http.user_agent eq "") or ({ua_conds})', "UA not matching allowed substrings"))
         if preset["countries_blocked"]:
             codes = " ".join(f'"{c}"' for c in preset["countries_blocked"])
-            rules.append({
-                "description": "Block country list (preset)",
-                "expression": f"ip.src.country in {{{codes}}}",
-                "action": "block", "enabled": True,
-            })
+            block_parts.append((f"ip.src.country in {{{codes}}}", "country list"))
         if preset["blocked_paths"]:
             expr = " or ".join(f'http.request.uri.path contains "{p}"' for p in preset["blocked_paths"])
-            rules.append({
-                "description": "Block path list (preset)",
-                "expression": expr,
-                "action": "block", "enabled": True,
-            })
+            block_parts.append((expr, "path list"))
         if preset["blocked_user_agents"]:
             # Explicit named-bot block, separate from the generic
-            # non-browser-UA rule above - a bot like AhrefsBot ships a UA
-            # that itself contains "Mozilla" ("Mozilla/5.0 (compatible;
+            # non-browser-UA condition above - a bot like AhrefsBot ships a
+            # UA that itself contains "Mozilla" ("Mozilla/5.0 (compatible;
             # AhrefsBot/7.0; +http://ahrefs.com/robot/)"), so it passes that
             # generic check unaffected and needs its own substring match.
             expr = " or ".join(
                 f'lower(http.user_agent) contains "{ua.lower()}"' for ua in preset["blocked_user_agents"]
             )
+            block_parts.append((expr, "named bot user-agents"))
+
+        if block_parts:
             rules.append({
-                "description": "Block named bot user-agents (preset)",
-                "expression": expr,
+                "description": "Block: " + ", ".join(label for _, label in block_parts) + " (preset)",
+                "expression": " or ".join(f"({expr})" for expr, _ in block_parts),
                 "action": "block", "enabled": True,
             })
         return rules
 
     def set_bot_fight_mode(self, zone_id: str, enabled: bool) -> tuple[bool, str]:
-        r = self._patch(f"{CF_BASE}/{zone_id}/settings/bot_fight_mode", json={"value": "on" if enabled else "off"})
+        """`bot_fight_mode` is NOT a valid id under /zones/{id}/settings/* -
+        confirmed live against a real production zone (Cloudflare returned
+        "Undefined zone setting: bot_fight_mode", and the full settings list
+        for that zone doesn't contain it at all). The actual toggle lives on
+        the dedicated bot_management resource instead. Requires the API
+        token to carry the "Bot Management Read/Edit" permission - without
+        it this call 403s with an auth error rather than a 404, since the
+        endpoint itself is real, just not authorized for this token."""
+        r = self._put(f"{CF_BASE}/{zone_id}/bot_management", json={"fight_mode": enabled})
         if r.get("success"):
             return True, f"Bot Fight Mode {'on' if enabled else 'off'}"
         return False, self._err_msg(r)
