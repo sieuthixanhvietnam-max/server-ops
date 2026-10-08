@@ -3,6 +3,7 @@ import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
 import VerifyBadge from '@/components/VerifyBadge';
 import JobLogPanel from '@/components/JobLogPanel';
+import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
 import {
@@ -50,6 +51,13 @@ const DNS_STATUS_LABELS: Record<string, string> = {
   updated: 'Đã cập nhật',
   unchanged: 'Không đổi',
   error: 'Lỗi',
+};
+
+const verifyToText = (v?: API.VerifyInfo): string => {
+  if (!v) return '';
+  const parts = [`HTTP ${v.http_status}`, v.ok ? 'OK' : v.gone ? 'GONE' : 'FAIL'];
+  if (v.note) parts.push(v.note);
+  return parts.join(' - ');
 };
 
 const parseDomains = (text: string) =>
@@ -622,6 +630,18 @@ const CreateWpsite: React.FC = () => {
         <JobLogPanel job={job} />
 
         {(job?.status === 'success' || job?.status === 'failed') && (
+          <>
+          <JobResultActions
+            headers={['Source', 'Target', 'Server IP', 'Trạng thái', 'DNS (Cloudflare)', 'Xác minh', 'Ghi chú']}
+            rows={(job.result as API.CloneWpsiteResult[]).map((r) => [
+              r.source, r.target, r.ip,
+              CREATE_STATUS_LABELS[r.status] || r.status,
+              r.dns_status ? (DNS_STATUS_LABELS[r.dns_status] || r.dns_status) : '-',
+              verifyToText(r.verify),
+              r.note || '',
+            ])}
+            filename="create-wpsite-result.csv"
+          />
           <Table<API.CloneWpsiteResult>
             style={{ marginTop: 16 }}
             rowKey="target"
@@ -660,6 +680,7 @@ const CreateWpsite: React.FC = () => {
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
           />
+          </>
         )}
       </Card>
 

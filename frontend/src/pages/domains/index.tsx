@@ -1,6 +1,7 @@
 import BatchListFilter from '@/components/BatchListFilter';
 import JobLogPanel from '@/components/JobLogPanel';
 import JobProgressBar from '@/components/JobProgressBar';
+import JobResultActions from '@/components/JobResultActions';
 import SiteCredentialCell from '@/components/SiteCredentialCell';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import {
@@ -22,7 +23,7 @@ import type { ActionType, ProColumns, ProFormInstance } from '@ant-design/pro-co
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { CopyOutlined, DownloadOutlined, DownOutlined, ReloadOutlined, SyncOutlined, UserOutlined } from '@ant-design/icons';
 import { history } from '@umijs/max';
-import { App, Button, Dropdown, Modal, Tag } from 'antd';
+import { App, Button, Dropdown, Modal, Table, Tag } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -328,7 +329,7 @@ const DomainList: React.FC = () => {
         title="Đang lấy username từ server (SSH + WP-CLI)"
         open={usernamesModalOpen}
         onCancel={() => setUsernamesModalOpen(false)}
-        width={640}
+        width={900}
         footer={
           <Button onClick={() => setUsernamesModalOpen(false)}>
             {usernamesJob?.status === 'success' || usernamesJob?.status === 'failed' ? 'Đóng' : 'Ẩn (job vẫn chạy ngầm)'}
@@ -337,6 +338,32 @@ const DomainList: React.FC = () => {
       >
         <JobProgressBar job={usernamesJob} />
         <JobLogPanel job={usernamesJob} />
+        {(usernamesJob?.status === 'success' || usernamesJob?.status === 'failed') && (
+          <>
+            <JobResultActions
+              headers={['Domain', 'Server', 'Server IP', 'Trạng thái', 'Username', 'Ghi chú']}
+              rows={(usernamesJob.result as API.ExportUsernamesResult[]).map((r) => [
+                r.domain, r.server_name, r.ip, r.status, r.usernames.join(', '), r.note,
+              ])}
+              filename="usernames-export-result.csv"
+            />
+            <Table<API.ExportUsernamesResult>
+              size="small"
+              style={{ marginTop: 8 }}
+              rowKey="domain"
+              dataSource={usernamesJob.result}
+              pagination={false}
+              scroll={{ x: true }}
+              columns={[
+                { title: 'Domain', dataIndex: 'domain' },
+                { title: 'Server', dataIndex: 'server_name' },
+                { title: 'Trạng thái', dataIndex: 'status' },
+                { title: 'Username', dataIndex: 'usernames', render: (v: string[]) => v.join(', ') },
+                { title: 'Ghi chú', dataIndex: 'note' },
+              ]}
+            />
+          </>
+        )}
       </Modal>
     </PageContainer>
   );
