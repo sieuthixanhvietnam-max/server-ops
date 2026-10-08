@@ -31,6 +31,7 @@ import {
   Button,
   Card,
   Col,
+  Divider,
   Form,
   Input,
   Popconfirm,
@@ -195,102 +196,98 @@ const PresetFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) => (
       <Input placeholder="VD: Khắt khe cho niche cờ bạc" prefix={<TagOutlined style={{ color: '#bfbfbf' }} />} />
     </Form.Item>
 
-    <Row gutter={24}>
-      <Col span={12}>
-        <Typography.Title level={5} style={{ marginTop: 0 }}>
-          <FilterOutlined /> Chặn theo điều kiện
-        </Typography.Title>
+    <Typography.Title level={5} style={{ marginTop: 0 }}>
+      <FilterOutlined /> Chặn theo điều kiện
+    </Typography.Title>
 
-        <Form.Item name="countries_blocked" label={<Space size={4}><GlobalOutlined />Chặn quốc gia</Space>}>
-          <Select
-            mode="multiple"
-            showSearch
-            optionFilterProp="label"
-            placeholder="Chọn quốc gia cần chặn..."
-            options={countryOptions()}
-          />
-        </Form.Item>
-        <Form.Item
-          name="blocked_user_agents"
-          label={<Space size={4}><RobotOutlined />Chặn bot theo tên (user-agent)</Space>}
-          tooltip='Khớp theo chuỗi con trong User-Agent (không phân biệt hoa/thường). Bot như AhrefsBot tự nhận UA chứa "Mozilla" nên rule chặn UA-không-giống-browser không bắt được, cần chặn riêng ở đây.'
-        >
-          <Select mode="tags" placeholder="Nhập hoặc chọn nhanh bot phổ biến bên dưới..." tokenSeparators={[',']} />
-        </Form.Item>
-        <Form.Item label=" " colon={false} style={{ marginTop: -16 }}>
-          <Space wrap>
-            {COMMON_BOT_PRESETS.map((b) => (
-              <AddPresetButton key={b.value} label={b.label} value={b.value} />
-            ))}
-          </Space>
-        </Form.Item>
-        <Form.Item name="blocked_paths" label={<Space size={4}><LinkOutlined />Chặn path (URL chứa chuỗi này)</Space>}>
-          <Select mode="tags" placeholder="VD: xmlrpc.php" tokenSeparators={[',']} />
-        </Form.Item>
-        <Form.Item
-          name="bot_fight_mode"
-          label={<Space size={4}><ThunderboltOutlined />Bot Fight Mode</Space>}
-          valuePropName="checked"
-          tooltip="Setting riêng của Cloudflare ở cấp zone (khác hẳn các rule ở trên) - tự động chặn/challenge traffic giống bot mà Cloudflare tự nhận diện."
-        >
-          <Switch />
-        </Form.Item>
-      </Col>
+    <Form.Item name="countries_blocked" label={<Space size={4}><GlobalOutlined />Chặn quốc gia</Space>}>
+      <Select
+        mode="multiple"
+        showSearch
+        optionFilterProp="label"
+        placeholder="Chọn quốc gia cần chặn..."
+        options={countryOptions()}
+      />
+    </Form.Item>
+    <Form.Item
+      name="blocked_user_agents"
+      label={<Space size={4}><RobotOutlined />Chặn bot theo tên (user-agent)</Space>}
+      tooltip='Khớp theo chuỗi con trong User-Agent (không phân biệt hoa/thường). Bot như AhrefsBot tự nhận UA chứa "Mozilla" nên rule chặn UA-không-giống-browser không bắt được, cần chặn riêng ở đây.'
+    >
+      <Select mode="tags" placeholder="Nhập hoặc chọn nhanh bot phổ biến bên dưới..." tokenSeparators={[',']} />
+    </Form.Item>
+    <Form.Item label=" " colon={false} style={{ marginTop: -16 }}>
+      <Space wrap>
+        {COMMON_BOT_PRESETS.map((b) => (
+          <AddPresetButton key={b.value} label={b.label} value={b.value} />
+        ))}
+      </Space>
+    </Form.Item>
+    <Form.Item name="blocked_paths" label={<Space size={4}><LinkOutlined />Chặn path (URL chứa chuỗi này)</Space>}>
+      <Select mode="tags" placeholder="VD: xmlrpc.php" tokenSeparators={[',']} />
+    </Form.Item>
+    <Form.Item
+      name="bot_fight_mode"
+      label={<Space size={4}><ThunderboltOutlined />Bot Fight Mode</Space>}
+      valuePropName="checked"
+      tooltip="Setting riêng của Cloudflare ở cấp zone (khác hẳn các rule ở trên) - tự động chặn/challenge traffic giống bot mà Cloudflare tự nhận diện."
+    >
+      <Switch />
+    </Form.Item>
 
-      <Col span={12}>
-        <Typography.Title level={5} style={{ marginTop: 0 }}>
-          <SafetyCertificateOutlined /> Rule nền &amp; an toàn
-        </Typography.Title>
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message={
-            isDefault
-              ? 'Đây là preset mặc định - lựa chọn hay được dùng lại khi 1 preset khác có vấn đề. Xoá hết 1 danh sách hoặc tắt toggle dưới đây đồng nghĩa không còn preset nào được đảm bảo an toàn tuyệt đối nữa.'
-              : 'Xoá hết 1 danh sách hoặc tắt toggle dưới đây đồng nghĩa rule đó không còn áp dụng - có thể khiến rule chặn quốc gia/bot/path bên trái bắt nhầm IP whitelist hoặc Googlebot.'
-          }
-        />
-        <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-          Request được "bỏ qua" (skip) nếu khớp BẤT KỲ điều kiện nào dưới đây - không bị áp các rule chặn ở cột trái.
-        </Typography.Text>
-        <WhitelistIpField />
-        <ToggleRow
-          name="skip_verified_bot"
-          icon={<RobotOutlined />}
-          title="Bỏ qua bot đã xác minh (Cloudflare)"
-          desc="Dùng tín hiệu cf.client.bot do Cloudflare tự nhận diện."
-        />
-        <ListRow
-          name="skip_asns"
-          icon={<GlobalOutlined />}
-          title="Bỏ qua theo ASN"
-          desc="Mặc định 15169 (Google) - thêm/xoá ASN tuỳ ý."
-          placeholder="VD: 15169"
-        />
-        <ListRow
-          name="skip_paths"
-          icon={<LinkOutlined />}
-          title="Bỏ qua theo path"
-          desc="Mặc định /wp-json/ - URL chứa 1 trong các chuỗi này sẽ được bỏ qua."
-          placeholder="VD: /wp-json/"
-        />
-        <ListRow
-          name="allowed_ports"
-          icon={<ApiOutlined />}
-          title="Port được phép"
-          desc="Chặn mọi request không vào qua 1 trong các port này. Mặc định 80, 443."
-          placeholder="VD: 80"
-        />
-        <ListRow
-          name="allowed_ua_substrings"
-          icon={<DesktopOutlined />}
-          title="Chuỗi UA hợp lệ (browser thật)"
-          desc='Chặn User-Agent không chứa bất kỳ chuỗi nào ở đây. Mặc định "mozilla", "opera".'
-          placeholder="VD: mozilla"
-        />
-      </Col>
-    </Row>
+    <Divider />
+
+    <Typography.Title level={5} style={{ marginTop: 0 }}>
+      <SafetyCertificateOutlined /> Rule nền &amp; an toàn
+    </Typography.Title>
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginBottom: 12 }}
+      message={
+        isDefault
+          ? 'Đây là preset mặc định - lựa chọn hay được dùng lại khi 1 preset khác có vấn đề. Xoá hết 1 danh sách hoặc tắt toggle dưới đây đồng nghĩa không còn preset nào được đảm bảo an toàn tuyệt đối nữa.'
+          : 'Xoá hết 1 danh sách hoặc tắt toggle dưới đây đồng nghĩa rule đó không còn áp dụng - có thể khiến rule chặn quốc gia/bot/path phía trên bắt nhầm IP whitelist hoặc Googlebot.'
+      }
+    />
+    <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+      Request được "bỏ qua" (skip) nếu khớp BẤT KỲ điều kiện nào dưới đây - không bị áp các rule chặn phía trên.
+    </Typography.Text>
+    <WhitelistIpField />
+    <ToggleRow
+      name="skip_verified_bot"
+      icon={<RobotOutlined />}
+      title="Bỏ qua bot đã xác minh (Cloudflare)"
+      desc="Dùng tín hiệu cf.client.bot do Cloudflare tự nhận diện."
+    />
+    <ListRow
+      name="skip_asns"
+      icon={<GlobalOutlined />}
+      title="Bỏ qua theo ASN"
+      desc="Mặc định 15169 (Google) - thêm/xoá ASN tuỳ ý."
+      placeholder="VD: 15169"
+    />
+    <ListRow
+      name="skip_paths"
+      icon={<LinkOutlined />}
+      title="Bỏ qua theo path"
+      desc="Mặc định /wp-json/ - URL chứa 1 trong các chuỗi này sẽ được bỏ qua."
+      placeholder="VD: /wp-json/"
+    />
+    <ListRow
+      name="allowed_ports"
+      icon={<ApiOutlined />}
+      title="Port được phép"
+      desc="Chặn mọi request không vào qua 1 trong các port này. Mặc định 80, 443."
+      placeholder="VD: 80"
+    />
+    <ListRow
+      name="allowed_ua_substrings"
+      icon={<DesktopOutlined />}
+      title="Chuỗi UA hợp lệ (browser thật)"
+      desc='Chặn User-Agent không chứa bất kỳ chuỗi nào ở đây. Mặc định "mozilla", "opera".'
+      placeholder="VD: mozilla"
+    />
   </>
 );
 
