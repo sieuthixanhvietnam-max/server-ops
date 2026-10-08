@@ -272,7 +272,7 @@ class CFClient:
         rather than sending a meaningless empty Cloudflare set."""
         skip_parts = []
         if preset["whitelist_ips"]:
-            ips = " ".join(preset["whitelist_ips"])
+            ips = " ".join(entry["ip"] for entry in preset["whitelist_ips"])
             skip_parts.append(f"(ip.src in {{ {ips} }})")
         if preset["skip_verified_bot"]:
             skip_parts.append("(cf.client.bot)")

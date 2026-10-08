@@ -53,7 +53,7 @@ type PresetFormValues = {
   blocked_user_agents: string[];
   blocked_paths: string[];
   bot_fight_mode: boolean;
-  whitelist_ips: string[];
+  whitelist_ips: API.WhitelistIpEntry[];
   skip_paths: string[];
   skip_verified_bot: boolean;
   skip_asns: string[];
@@ -142,6 +142,53 @@ const ListRow: React.FC<{
   </div>
 );
 
+/** Cùng kiểu header như ListRow, nhưng cho whitelist_ips - mỗi IP có thêm 1
+ * ô "tên/ghi chú" đi kèm (hiện khi hover ở nơi khác), nên không thể dùng
+ * Select tags (chỉ nhận string trơn) mà cần Form.List để sửa từng cặp
+ * {ip, label} độc lập. */
+const WhitelistIpField: React.FC = () => (
+  <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fafafa', marginBottom: 8 }}>
+    <Space align="start" style={{ marginBottom: 6 }}>
+      <span style={{ fontSize: 16, color: '#1890ff', marginTop: 2 }}>
+        <SafetyCertificateOutlined />
+      </span>
+      <div>
+        <Typography.Text strong>IP Whitelist</Typography.Text>
+        <div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            IP văn phòng/bot được bỏ qua mọi rule chặn, riêng cho preset này. Tên/ghi chú hiện khi hover vào IP.
+          </Typography.Text>
+        </div>
+      </div>
+    </Space>
+    <Form.List name="whitelist_ips">
+      {(fields, { add, remove }) => (
+        <>
+          {fields.map((field) => (
+            <Space key={field.key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+              <Form.Item
+                {...field}
+                name={[field.name, 'ip']}
+                rules={[{ required: true, message: 'Nhập IP' }]}
+                noStyle
+              >
+                <Input placeholder="VD: 192.177.71.221" style={{ width: 170, fontFamily: 'monospace' }} />
+              </Form.Item>
+              <Form.Item {...field} name={[field.name, 'label']} noStyle>
+                <Input placeholder="Tên/ghi chú (tuỳ chọn)" style={{ width: 170 }} />
+              </Form.Item>
+              <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+            </Space>
+          ))}
+          <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={() => add({ ip: '', label: '' })}>
+            Thêm IP
+          </Button>
+        </>
+      )}
+    </Form.List>
+  </div>
+);
+
 const PresetFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) => (
   <>
     <Form.Item name="name" label="Tên preset" rules={[{ required: true, message: 'Nhập tên preset' }]}>
@@ -207,13 +254,7 @@ const PresetFormFields: React.FC<{ isDefault?: boolean }> = ({ isDefault }) => (
         <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
           Request được "bỏ qua" (skip) nếu khớp BẤT KỲ điều kiện nào dưới đây - không bị áp các rule chặn ở cột trái.
         </Typography.Text>
-        <ListRow
-          name="whitelist_ips"
-          icon={<SafetyCertificateOutlined />}
-          title="IP Whitelist"
-          desc="IP văn phòng/bot được bỏ qua mọi rule chặn - riêng cho preset này."
-          placeholder="VD: 192.177.71.221"
-        />
+        <WhitelistIpField />
         <ToggleRow
           name="skip_verified_bot"
           icon={<RobotOutlined />}

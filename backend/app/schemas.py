@@ -152,6 +152,17 @@ class CfAccountOut(BaseModel):
     # and never sent back to the client once saved.
 
 
+class WhitelistIpEntry(BaseModel):
+    """1 entry of FirewallPreset.whitelist_ips - unlike the other list
+    fields on that model, this one isn't a bare string: label is a
+    human-readable "whose IP this is" note shown as a tooltip wherever the
+    list is displayed, carried over from the standalone Whitelist IP page
+    this was folded in from (see models.FirewallPreset's docstring)."""
+
+    ip: str
+    label: str = ""
+
+
 class FirewallPresetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -161,7 +172,7 @@ class FirewallPresetOut(BaseModel):
     blocked_user_agents: list[str]
     blocked_paths: list[str]
     bot_fight_mode: bool
-    whitelist_ips: list[str]
+    whitelist_ips: list[WhitelistIpEntry]
     skip_paths: list[str]
     skip_verified_bot: bool
     skip_asns: list[str]

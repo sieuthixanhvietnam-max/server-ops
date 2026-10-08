@@ -11,7 +11,7 @@ from app.database import get_db
 from app.firewall_preset_service import DEFAULT_PRESET_NAME
 from app.models import FirewallPreset
 from app.ops.validation import is_valid_ip
-from app.schemas import FirewallPresetOut
+from app.schemas import FirewallPresetOut, WhitelistIpEntry
 
 # Reading the list (any logged-in user - the Firewall page needs it to
 # offer a preset picker) vs editing it (admin only, per the user's explicit
@@ -33,7 +33,7 @@ class CreateFirewallPresetRequest(BaseModel):
     blocked_user_agents: list[str] = []
     blocked_paths: list[str] = []
     bot_fight_mode: bool = False
-    whitelist_ips: list[str] = []
+    whitelist_ips: list[WhitelistIpEntry] = []
     skip_paths: list[str] = ["/wp-json/"]
     skip_verified_bot: bool = True
     skip_asns: list[str] = ["15169"]
@@ -47,7 +47,7 @@ class UpdateFirewallPresetRequest(BaseModel):
     blocked_user_agents: list[str] | None = None
     blocked_paths: list[str] | None = None
     bot_fight_mode: bool | None = None
-    whitelist_ips: list[str] | None = None
+    whitelist_ips: list[WhitelistIpEntry] | None = None
     skip_paths: list[str] | None = None
     skip_verified_bot: bool | None = None
     skip_asns: list[str] | None = None
@@ -97,14 +97,17 @@ def _normalize_asns(values: list[str]) -> list[str]:
     return out
 
 
-def _normalize_ips(values: list[str]) -> list[str]:
+def _normalize_whitelist_ips(entries: list[WhitelistIpEntry]) -> list[dict]:
     out = []
-    for v in values:
-        v = v.strip()
-        if not is_valid_ip(v):
-            raise HTTPException(status_code=400, detail=f"'{v}' không phải IPv4 hợp lệ")
-        if v not in out:
-            out.append(v)
+    seen = set()
+    for e in entries:
+        ip = e.ip.strip()
+        if not is_valid_ip(ip):
+            raise HTTPException(status_code=400, detail=f"'{ip}' không phải IPv4 hợp lệ")
+        if ip in seen:
+            continue
+        seen.add(ip)
+        out.append({"ip": ip, "label": e.label.strip()})
     return out
 
 
@@ -134,7 +137,7 @@ def create_firewall_preset(
         blocked_user_agents=json.dumps(_normalize_strings(body.blocked_user_agents)),
         blocked_paths=json.dumps(_normalize_strings(body.blocked_paths)),
         bot_fight_mode=body.bot_fight_mode,
-        whitelist_ips=json.dumps(_normalize_ips(body.whitelist_ips)),
+        whitelist_ips=json.dumps(_normalize_whitelist_ips(body.whitelist_ips)),
         skip_paths=json.dumps(_normalize_strings(body.skip_paths)),
         skip_verified_bot=body.skip_verified_bot,
         skip_asns=json.dumps(_normalize_asns(body.skip_asns)),
@@ -177,7 +180,7 @@ def update_firewall_preset(
     if body.bot_fight_mode is not None:
         row.bot_fight_mode = body.bot_fight_mode
     if body.whitelist_ips is not None:
-        row.whitelist_ips = json.dumps(_normalize_ips(body.whitelist_ips))
+        row.whitelist_ips = json.dumps(_normalize_whitelist_ips(body.whitelist_ips))
     if body.skip_paths is not None:
         row.skip_paths = json.dumps(_normalize_strings(body.skip_paths))
     if body.skip_verified_bot is not None:

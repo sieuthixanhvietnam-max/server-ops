@@ -786,7 +786,7 @@ export async function createFirewallPreset(
     blocked_user_agents?: string[];
     blocked_paths?: string[];
     bot_fight_mode?: boolean;
-    whitelist_ips?: string[];
+    whitelist_ips?: API.WhitelistIpEntry[];
     skip_paths?: string[];
     skip_verified_bot?: boolean;
     skip_asns?: string[];
@@ -811,7 +811,7 @@ export async function updateFirewallPreset(
     blocked_user_agents?: string[];
     blocked_paths?: string[];
     bot_fight_mode?: boolean;
-    whitelist_ips?: string[];
+    whitelist_ips?: API.WhitelistIpEntry[];
     skip_paths?: string[];
     skip_verified_bot?: boolean;
     skip_asns?: string[];

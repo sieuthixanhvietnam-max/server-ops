@@ -35,6 +35,33 @@ const CompactTagRow: React.FC<{ icon: React.ReactNode; color: string; items: str
   );
 };
 
+/** Giống CompactTagRow, nhưng cho whitelist_ips - mỗi tag là 1 IP, hover vào
+ * hiện tên/ghi chú riêng của IP đó (label) thay vì chỉ 1 tooltip chung cho
+ * cả nhóm, vì mỗi IP có "chủ" khác nhau, không phải chỉ 1 danh sách đồng
+ * nhất như quốc gia/bot/path. */
+const CompactWhitelistRow: React.FC<{ items: API.WhitelistIpEntry[] }> = ({ items }) => {
+  if (!items.length) return null;
+  const visible = items.slice(0, MAX_VISIBLE_TAGS);
+  const rest = items.slice(MAX_VISIBLE_TAGS);
+  return (
+    <Space size={4} wrap align="start">
+      <span style={{ color: '#8c8c8c' }}>
+        <SafetyCertificateOutlined />
+      </span>
+      {visible.map((e) => (
+        <Tooltip key={e.ip} title={e.label || 'Chưa đặt tên'}>
+          <Tag color="blue">{e.ip}</Tag>
+        </Tooltip>
+      ))}
+      {rest.length > 0 && (
+        <Tooltip title={rest.map((e) => (e.label ? `${e.ip} (${e.label})` : e.ip)).join(', ')}>
+          <Tag>+{rest.length}</Tag>
+        </Tooltip>
+      )}
+    </Space>
+  );
+};
+
 /** Những điểm cần cảnh báo trong phần "rule nền" - whitelist_ips/skip_paths/
  * skip_asns/allowed_ports/allowed_ua_substrings là list (rỗng = rule không
  * áp dụng), skip_verified_bot là bool nhị phân thật sự không có "giá trị"
@@ -77,7 +104,7 @@ const FirewallPresetSummary: React.FC<{ preset: API.FirewallPresetItem }> = ({ p
         </Space>
       )}
 
-      <CompactTagRow icon={<SafetyCertificateOutlined />} color="blue" items={preset.whitelist_ips} />
+      <CompactWhitelistRow items={preset.whitelist_ips} />
       <CompactTagRow icon={<GlobalOutlined />} color="red" items={preset.countries_blocked} render={countryLabel} />
       <CompactTagRow icon={<RobotOutlined />} color="volcano" items={preset.blocked_user_agents} />
       <CompactTagRow icon={<LinkOutlined />} color="orange" items={preset.blocked_paths} />

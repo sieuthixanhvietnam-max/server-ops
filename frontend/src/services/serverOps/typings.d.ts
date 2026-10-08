@@ -382,6 +382,11 @@ declare namespace API {
     preset: string;
   };
 
+  type WhitelistIpEntry = {
+    ip: string;
+    label: string;
+  };
+
   type FirewallPresetItem = {
     id: number;
     name: string;
@@ -389,7 +394,7 @@ declare namespace API {
     blocked_user_agents: string[];
     blocked_paths: string[];
     bot_fight_mode: boolean;
-    whitelist_ips: string[];
+    whitelist_ips: WhitelistIpEntry[];
     skip_paths: string[];
     skip_verified_bot: boolean;
     skip_asns: string[];

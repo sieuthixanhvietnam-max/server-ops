@@ -13,28 +13,55 @@ _DEFAULT_SKIP_PATHS = ["/wp-json/"]
 _DEFAULT_SKIP_ASNS = ["15169"]  # Google
 _DEFAULT_ALLOWED_PORTS = ["80", "443"]
 _DEFAULT_ALLOWED_UA_SUBSTRINGS = ["mozilla", "opera"]
-# The exact IPs live in production's cf_whitelist_ips table as of 2026-10-08
-# (queried directly via psql on the production host, not the original 33-IP
-# hardcoded migration list - 3 had been added by hand since then: 146.190.
-# 87.62 "ops-vps", 166.88.120.246 "S TRUST", 192.177.66.24 "Q Gum") - seeded
-# onto the "Mặc định" preset so the real bot/office IPs this org already
-# relies on survive the standalone "Whitelist IP" page's retirement
-# unchanged. If this list and production's cf_whitelist_ips ever drift
-# again before this deploys, re-query production rather than trusting this
-# comment's age.
+# The exact (ip, label) pairs live in production's cf_whitelist_ips table
+# as of 2026-10-08 (queried directly via psql on the production host, label
+# carried over too so the fold-in doesn't lose the "whose IP this is" notes -
+# not the original 33-IP hardcoded migration list, which was itself stale:
+# 3 had been added by hand since then - 146.190.87.62 "ops-vps", 166.88.
+# 120.246 "S TRUST", 192.177.66.24 "Q Gum") - seeded onto the "Mặc định"
+# preset so the real bot/office IPs this org already relies on survive the
+# standalone "Whitelist IP" page's retirement unchanged. If this list and
+# production's cf_whitelist_ips ever drift again before this deploys,
+# re-query production rather than trusting this comment's age. "N/A" labels
+# in production are turned into "" here - that filler text isn't a real
+# label worth carrying forward.
 _DEFAULT_WHITELIST_IPS = [
-    "8.222.213.17",
-    "104.253.193.165", "122.248.206.212", "139.59.224.39",
-    "142.111.69.199", "146.190.87.62", "159.192.43.132", "139.59.227.174",
-    "166.88.119.110", "166.88.119.210", "166.88.119.211",
-    "166.88.119.214", "166.88.119.249", "166.88.119.250",
-    "166.88.119.251", "166.88.120.246", "171.233.128.13", "192.168.1.5",
-    "192.168.1.70", "192.177.66.24", "192.177.66.44", "192.177.68.187",
-    "192.177.68.225", "192.177.68.226", "192.177.68.35",
-    "192.177.68.48", "192.177.71.1", "192.177.71.113",
-    "192.177.71.221", "192.177.71.222", "192.177.71.61",
-    "192.177.71.78", "192.177.85.79",
-    "23.230.31.115", "3.90.129.137", "54.254.237.225",
+    {"ip": "8.222.213.17", "label": "IP TOOL QC M3"},
+    {"ip": "104.253.193.165", "label": "S VIN"},
+    {"ip": "122.248.206.212", "label": ""},
+    {"ip": "139.59.224.39", "label": ""},
+    {"ip": "142.111.69.199", "label": "S PII"},
+    {"ip": "146.190.87.62", "label": "ops-vps"},
+    {"ip": "159.192.43.132", "label": ""},
+    {"ip": "139.59.227.174", "label": "IP TOOL"},
+    {"ip": "166.88.119.110", "label": "S SOP"},
+    {"ip": "166.88.119.210", "label": "S COS"},
+    {"ip": "166.88.119.211", "label": ""},
+    {"ip": "166.88.119.214", "label": ""},
+    {"ip": "166.88.119.249", "label": "ROSE"},
+    {"ip": "166.88.119.250", "label": "S QUICK"},
+    {"ip": "166.88.119.251", "label": "S CREW"},
+    {"ip": "166.88.120.246", "label": "S TRUST"},
+    {"ip": "171.233.128.13", "label": ""},
+    {"ip": "192.168.1.5", "label": ""},
+    {"ip": "192.168.1.70", "label": ""},
+    {"ip": "192.177.66.24", "label": "Q Gum"},
+    {"ip": "192.177.66.44", "label": "S TIMM"},
+    {"ip": "192.177.68.187", "label": "S CHAT"},
+    {"ip": "192.177.68.225", "label": "S NING"},
+    {"ip": "192.177.68.226", "label": "S BEAR"},
+    {"ip": "192.177.68.35", "label": "S HAM"},
+    {"ip": "192.177.68.48", "label": "S PUN"},
+    {"ip": "192.177.71.1", "label": "S RUP"},
+    {"ip": "192.177.71.113", "label": ""},
+    {"ip": "192.177.71.221", "label": "S TODD"},
+    {"ip": "192.177.71.222", "label": ""},
+    {"ip": "192.177.71.61", "label": ""},
+    {"ip": "192.177.71.78", "label": ""},
+    {"ip": "192.177.85.79", "label": "S BANG"},
+    {"ip": "23.230.31.115", "label": "S CARR"},
+    {"ip": "3.90.129.137", "label": ""},
+    {"ip": "54.254.237.225", "label": ""},
 ]
 
 

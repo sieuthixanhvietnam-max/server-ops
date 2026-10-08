@@ -228,7 +228,12 @@ class FirewallPreset(Base):
     Every rule here is genuinely editable, not a toggle over hardcoded
     content - same "edit the actual values" UX for all of these:
 
-    - whitelist_ips: IPs to skip every block rule for (bots/office IPs).
+    - whitelist_ips: IPs to skip every block rule for (bots/office IPs),
+      stored as [{"ip": ..., "label": ...}] (not a bare string list like
+      the others) so each IP keeps a human-readable "whose IP this is"
+      note, shown as a tooltip wherever the list is displayed - the
+      original standalone "Whitelist IP" page had this per-IP label too,
+      and losing it on the fold-in would make a long IP list unreadable.
       Used to live on its own separate "Whitelist IP" page shared by every
       template - folded directly into the preset instead, since in
       practice each preset wants its own trusted-IP list, not one global
