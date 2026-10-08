@@ -1,3 +1,4 @@
+import { isPresetSafe } from '@/components/FirewallPresetCard';
 import { countryLabel } from '@/utils/countries';
 import { CheckCircleFilled, CloseCircleFilled, GlobalOutlined, LinkOutlined, RobotOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { Space, Tag, Tooltip } from 'antd';
@@ -62,15 +63,14 @@ const CompactWhitelistRow: React.FC<{ items: API.WhitelistIpEntry[] }> = ({ item
   );
 };
 
-/** Những điểm cần cảnh báo trong phần "rule nền" - whitelist_ips/skip_paths/
- * skip_asns/allowed_ports/allowed_ua_substrings là list (rỗng = rule không
- * áp dụng), skip_verified_bot là bool nhị phân thật sự không có "giá trị"
- * để sửa thêm. Rỗng/tắt ở đây đồng nghĩa rule tương ứng không còn áp dụng -
- * đáng cảnh báo giống nhau. */
+/** Những điểm cần cảnh báo trong phần "rule nền" - đúng 4 điều kiện mà
+ * `isPresetSafe` (FirewallPresetCard) dùng để tính "an toàn", chỉ khác là
+ * liệt kê ra TỪNG điều kiện đang fail thay vì trả về 1 boolean, nên
+ * `flags.length === 0` luôn tương đương `isPresetSafe(p)` - không được tự
+ * thêm/bớt điều kiện ở đây mà không sửa `isPresetSafe` theo, 2 nơi từng lệch
+ * nhau (bug thật, đã xảy ra) vì mỗi nơi tự định nghĩa "an toàn" riêng. */
 const dangerFlags = (p: API.FirewallPresetItem): string[] => {
   const flags: string[] = [];
-  const hasAnySkip = p.whitelist_ips.length > 0 || p.skip_verified_bot || p.skip_paths.length > 0 || p.skip_asns.length > 0;
-  if (!hasAnySkip) flags.push('Không có skip rule nào - mọi IP đều bị áp rule chặn');
   if (!p.whitelist_ips.length) flags.push('Chưa có IP whitelist nào');
   if (!p.skip_verified_bot) flags.push('Không bỏ qua bot đã xác minh');
   if (!p.allowed_ports.length) flags.push('Không chặn port lạ');
@@ -88,7 +88,7 @@ const FirewallPresetSummary: React.FC<{ preset: API.FirewallPresetItem }> = ({ p
 
   return (
     <Space direction="vertical" size={6} style={{ maxWidth: 480 }}>
-      {flags.length === 0 ? (
+      {isPresetSafe(preset) ? (
         <Tooltip title="Có IP whitelist, bỏ qua bot đã xác minh, chặn port lạ, và chặn UA giả browser đều đang áp dụng">
           <Tag icon={<CheckCircleFilled />} color="success">
             Đủ rule nền an toàn
