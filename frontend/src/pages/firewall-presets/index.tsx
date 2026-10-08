@@ -184,9 +184,16 @@ const WhitelistIpField: React.FC = () => {
           {open ? <UpOutlined /> : <DownOutlined />}
         </Space>
       </div>
-      {open && (
-        <Form.List name="whitelist_ips">
-          {(fields, { add, remove }) => (
+      {/* Form.List phải LUÔN mount, chỉ ẩn/hiện nội dung bên trong theo
+      `open` - nếu gate cả Form.List bằng `{open && <Form.List>...}` thì
+      chừng nào chưa mở lần đầu, 'whitelist_ips' chưa có Field nào đăng ký
+      trong Form store, và `Form.useWatch` ở trên không nhận được thông
+      báo khi Clone/Sửa gọi `form.setFieldsValue(...)` cho field đó - dính
+      lỗi thật (đã verify bằng test), không phải suy đoán: card hiện đúng
+      số IP nhưng field này cứ hiện "0 IP" dù dữ liệu gốc có 36 IP. */}
+      <Form.List name="whitelist_ips">
+        {(fields, { add, remove }) =>
+          open && (
             <div style={{ marginTop: 10 }}>
               <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
                 {fields.map((field) => (
@@ -222,8 +229,7 @@ const WhitelistIpField: React.FC = () => {
               </Button>
             </div>
           )}
-        </Form.List>
-      )}
+      </Form.List>
     </div>
   );
 };
@@ -570,7 +576,6 @@ const FirewallPresetsBody: React.FC = () => {
   // instead, after the panel (and its <Form>) has already committed.
   useEffect(() => {
     if (formMode === 'add') {
-      form.resetFields();
       // Clone: mọi field giữ nguyên từ preset gốc, chỉ tên đổi gợi ý "(copy)"
       // để không đụng ràng buộc tên duy nhất - admin tự sửa tên trước khi lưu.
       form.setFieldsValue(
