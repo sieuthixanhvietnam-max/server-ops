@@ -8,6 +8,7 @@ import { COMMON_BOT_PRESETS } from '@/utils/firewallBots';
 import { countryLabel, countryOptions } from '@/utils/countries';
 import {
   ApiOutlined,
+  CopyOutlined,
   CrownOutlined,
   DeleteOutlined,
   DesktopOutlined,
@@ -497,8 +498,9 @@ const isPresetSafe = (p: API.FirewallPresetItem): boolean => {
 const PresetCard: React.FC<{
   preset: API.FirewallPresetItem;
   onEdit: () => void;
+  onClone: () => void;
   onDelete: () => void;
-}> = ({ preset, onEdit, onDelete }) => (
+}> = ({ preset, onEdit, onClone, onDelete }) => (
   <Card
     hoverable
     title={
@@ -518,6 +520,9 @@ const PresetCard: React.FC<{
       <Space size={4}>
         <Tooltip title="Sửa">
           <Button type="text" size="small" icon={<EditOutlined />} onClick={onEdit} />
+        </Tooltip>
+        <Tooltip title="Clone thành preset mới">
+          <Button type="text" size="small" icon={<CopyOutlined />} onClick={onClone} />
         </Tooltip>
         <Tooltip title={preset.is_default ? 'Không thể xoá preset mặc định' : 'Xoá'}>
           <Popconfirm title={`Xoá preset "${preset.name}"?`} disabled={preset.is_default} onConfirm={onDelete}>
@@ -541,6 +546,7 @@ const FirewallPresetsBody: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
   const [editingPreset, setEditingPreset] = useState<API.FirewallPresetItem>();
+  const [cloneSource, setCloneSource] = useState<API.FirewallPresetItem>();
   const [form] = Form.useForm<PresetFormValues>();
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -565,7 +571,25 @@ const FirewallPresetsBody: React.FC = () => {
   useEffect(() => {
     if (formMode === 'add') {
       form.resetFields();
-      form.setFieldsValue(DEFAULT_FORM_VALUES);
+      // Clone: mọi field giữ nguyên từ preset gốc, chỉ tên đổi gợi ý "(copy)"
+      // để không đụng ràng buộc tên duy nhất - admin tự sửa tên trước khi lưu.
+      form.setFieldsValue(
+        cloneSource
+          ? {
+              name: `${cloneSource.name} (copy)`,
+              countries_blocked: cloneSource.countries_blocked,
+              blocked_user_agents: cloneSource.blocked_user_agents,
+              blocked_paths: cloneSource.blocked_paths,
+              bot_fight_mode: cloneSource.bot_fight_mode,
+              whitelist_ips: cloneSource.whitelist_ips,
+              skip_paths: cloneSource.skip_paths,
+              skip_verified_bot: cloneSource.skip_verified_bot,
+              skip_asns: cloneSource.skip_asns,
+              allowed_ports: cloneSource.allowed_ports,
+              allowed_ua_substrings: cloneSource.allowed_ua_substrings,
+            }
+          : DEFAULT_FORM_VALUES,
+      );
     } else if (formMode === 'edit' && editingPreset) {
       form.setFieldsValue({
         name: editingPreset.name,
@@ -585,21 +609,30 @@ const FirewallPresetsBody: React.FC = () => {
       panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formMode, editingPreset]);
+  }, [formMode, editingPreset, cloneSource]);
 
   const openAdd = () => {
     setEditingPreset(undefined);
+    setCloneSource(undefined);
+    setFormMode('add');
+  };
+
+  const openClone = (p: API.FirewallPresetItem) => {
+    setEditingPreset(undefined);
+    setCloneSource(p);
     setFormMode('add');
   };
 
   const openEdit = (p: API.FirewallPresetItem) => {
     setEditingPreset(p);
+    setCloneSource(undefined);
     setFormMode('edit');
   };
 
   const closePanel = () => {
     setFormMode(null);
     setEditingPreset(undefined);
+    setCloneSource(undefined);
   };
 
   const handleSubmit = async (values: PresetFormValues) => {
@@ -647,7 +680,12 @@ const FirewallPresetsBody: React.FC = () => {
         <Row gutter={[16, 16]}>
           {presets.map((p) => (
             <Col key={p.id} xs={24} sm={12} lg={8}>
-              <PresetCard preset={p} onEdit={() => openEdit(p)} onDelete={() => handleDelete(p)} />
+              <PresetCard
+                preset={p}
+                onEdit={() => openEdit(p)}
+                onClone={() => openClone(p)}
+                onDelete={() => handleDelete(p)}
+              />
             </Col>
           ))}
         </Row>
@@ -657,7 +695,13 @@ const FirewallPresetsBody: React.FC = () => {
         <div ref={panelRef}>
           <Card
             style={{ marginTop: 16 }}
-            title={formMode === 'add' ? 'Thêm Preset mới' : `Sửa preset "${editingPreset?.name}"`}
+            title={
+              formMode === 'edit'
+                ? `Sửa preset "${editingPreset?.name}"`
+                : cloneSource
+                  ? `Clone từ "${cloneSource.name}"`
+                  : 'Thêm Preset mới'
+            }
           >
             <Form form={form} layout="vertical" onFinish={handleSubmit}>
               <PresetFormFields isDefault={formMode === 'edit' && editingPreset?.is_default} />
