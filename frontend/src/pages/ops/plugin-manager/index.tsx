@@ -7,6 +7,7 @@ import PluginResultPanel from '@/components/PluginResultPanel';
 import WpOrgPluginSelect from '@/components/WpOrgPluginSelect';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
+import { useUploadableLibrary } from '@/hooks/useUploadableLibrary';
 import {
   deleteMuPlugin,
   deletePluginZip,
@@ -77,43 +78,49 @@ const PluginManager: React.FC = () => {
   const [toggleList, setToggleList] = usePersistedState<string[]>('plugin-manager:toggleList', []);
   const [slugList, setSlugList] = usePersistedState<string[]>('plugin-manager:slugList', []);
 
-  const [zipLibrary, setZipLibrary] = useState<API.PluginZipItem[]>([]);
   const [selectedZipIds, setSelectedZipIds] = usePersistedState<number[]>('plugin-manager:selectedZipIds', []);
-  const [zipUploadOpen, setZipUploadOpen] = useState(false);
-  const [zipUploadLabel, setZipUploadLabel] = useState('');
-  const [zipUploadFileList, setZipUploadFileList] = useState<UploadFile[]>([]);
-  const [zipUploading, setZipUploading] = useState(false);
+  const zip = useUploadableLibrary<API.PluginZipItem>({
+    list: listPluginZips,
+    upload: uploadPluginZip,
+    remove: deletePluginZip,
+    onUploaded: (created) => setSelectedZipIds((prev) => [...prev, created.id]),
+    onDeleted: (id) => setSelectedZipIds((prev) => prev.filter((x) => x !== id)),
+    missingFileMessage: 'Nhập nhãn và chọn file zip trước',
+  });
 
-  const refreshZipLibrary = () => listPluginZips().then((res) => setZipLibrary(res.data || []));
-
-  const [themeZipLibrary, setThemeZipLibrary] = useState<API.ThemeZipItem[]>([]);
   const [selectedThemeZipIds, setSelectedThemeZipIds] = usePersistedState<number[]>(
     'plugin-manager:selectedThemeZipIds',
     [],
   );
-  const [themeZipUploadOpen, setThemeZipUploadOpen] = useState(false);
-  const [themeZipUploadLabel, setThemeZipUploadLabel] = useState('');
-  const [themeZipUploadFileList, setThemeZipUploadFileList] = useState<UploadFile[]>([]);
-  const [themeZipUploading, setThemeZipUploading] = useState(false);
-  const refreshThemeZipLibrary = () => listThemeZips().then((res) => setThemeZipLibrary(res.data || []));
+  const theme = useUploadableLibrary<API.ThemeZipItem>({
+    list: listThemeZips,
+    upload: uploadThemeZip,
+    remove: deleteThemeZip,
+    onUploaded: (created) => setSelectedThemeZipIds((prev) => [...prev, created.id]),
+    onDeleted: (id) => setSelectedThemeZipIds((prev) => prev.filter((x) => x !== id)),
+    missingFileMessage: 'Nhập nhãn và chọn file zip trước',
+  });
 
-  const [muPluginLibrary, setMuPluginLibrary] = useState<API.MuPluginItem[]>([]);
   const [selectedMuPluginId, setSelectedMuPluginId] = usePersistedState<number | undefined>(
     'plugin-manager:selectedMuPluginId',
     undefined,
   );
   const [muPluginCheckUsername, setMuPluginCheckUsername] = useState('');
-  const [muPluginUploadOpen, setMuPluginUploadOpen] = useState(false);
-  const [muPluginUploadLabel, setMuPluginUploadLabel] = useState('');
-  const [muPluginUploadFileList, setMuPluginUploadFileList] = useState<UploadFile[]>([]);
-  const [muPluginUploading, setMuPluginUploading] = useState(false);
-  const refreshMuPluginLibrary = () => listMuPlugins().then((res) => setMuPluginLibrary(res.data || []));
+  const muPlugin = useUploadableLibrary<API.MuPluginItem>({
+    list: listMuPlugins,
+    upload: uploadMuPlugin,
+    remove: deleteMuPlugin,
+    onUploaded: (created) => setSelectedMuPluginId(created.id),
+    onDeleted: (id) => setSelectedMuPluginId((prev) => (prev === id ? undefined : prev)),
+    missingFileMessage: 'Nhập nhãn và chọn file .php trước',
+  });
 
   useEffect(() => {
     listServers({ current: 1, pageSize: 500 }).then((res) => setServers(res.data || []));
-    refreshZipLibrary();
-    refreshThemeZipLibrary();
-    refreshMuPluginLibrary();
+    zip.refresh();
+    theme.refresh();
+    muPlugin.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -224,34 +231,6 @@ const PluginManager: React.FC = () => {
     }
   };
 
-  const zipUploadFile = zipUploadFileList[0]?.originFileObj as File | undefined;
-
-  const handleZipUpload = async () => {
-    if (!zipUploadFile || !zipUploadLabel.trim()) {
-      message.warning('Nhập nhãn và chọn file zip trước');
-      return;
-    }
-    setZipUploading(true);
-    try {
-      const created = await uploadPluginZip(zipUploadLabel.trim(), zipUploadFile);
-      message.success(`Đã thêm "${created.label}" vào thư viện`);
-      await refreshZipLibrary();
-      setSelectedZipIds((prev) => [...prev, created.id]);
-      setZipUploadOpen(false);
-      setZipUploadLabel('');
-      setZipUploadFileList([]);
-    } finally {
-      setZipUploading(false);
-    }
-  };
-
-  const handleZipDelete = async (id: number) => {
-    await deletePluginZip(id);
-    message.success('Đã xoá khỏi thư viện');
-    setSelectedZipIds((prev) => prev.filter((x) => x !== id));
-    refreshZipLibrary();
-  };
-
   const runInstallZip = async (dryRun: boolean) => {
     if (!requireDomains()) return;
     if (!selectedZipIds.length) {
@@ -271,34 +250,6 @@ const PluginManager: React.FC = () => {
     }
   };
 
-  const themeZipUploadFile = themeZipUploadFileList[0]?.originFileObj as File | undefined;
-
-  const handleThemeZipUpload = async () => {
-    if (!themeZipUploadFile || !themeZipUploadLabel.trim()) {
-      message.warning('Nhập nhãn và chọn file zip trước');
-      return;
-    }
-    setThemeZipUploading(true);
-    try {
-      const created = await uploadThemeZip(themeZipUploadLabel.trim(), themeZipUploadFile);
-      message.success(`Đã thêm "${created.label}" vào thư viện`);
-      await refreshThemeZipLibrary();
-      setSelectedThemeZipIds((prev) => [...prev, created.id]);
-      setThemeZipUploadOpen(false);
-      setThemeZipUploadLabel('');
-      setThemeZipUploadFileList([]);
-    } finally {
-      setThemeZipUploading(false);
-    }
-  };
-
-  const handleThemeZipDelete = async (id: number) => {
-    await deleteThemeZip(id);
-    message.success('Đã xoá khỏi thư viện');
-    setSelectedThemeZipIds((prev) => prev.filter((x) => x !== id));
-    refreshThemeZipLibrary();
-  };
-
   const runInstallThemeZip = async (dryRun: boolean) => {
     if (!requireDomains()) return;
     if (!selectedThemeZipIds.length) {
@@ -316,34 +267,6 @@ const PluginManager: React.FC = () => {
     } finally {
       setRunning(false);
     }
-  };
-
-  const muPluginUploadFile = muPluginUploadFileList[0]?.originFileObj as File | undefined;
-
-  const handleMuPluginUpload = async () => {
-    if (!muPluginUploadFile || !muPluginUploadLabel.trim()) {
-      message.warning('Nhập nhãn và chọn file .php trước');
-      return;
-    }
-    setMuPluginUploading(true);
-    try {
-      const created = await uploadMuPlugin(muPluginUploadLabel.trim(), muPluginUploadFile);
-      message.success(`Đã thêm "${created.label}" vào thư viện`);
-      await refreshMuPluginLibrary();
-      setSelectedMuPluginId(created.id);
-      setMuPluginUploadOpen(false);
-      setMuPluginUploadLabel('');
-      setMuPluginUploadFileList([]);
-    } finally {
-      setMuPluginUploading(false);
-    }
-  };
-
-  const handleMuPluginDelete = async (id: number) => {
-    await deleteMuPlugin(id);
-    message.success('Đã xoá khỏi thư viện');
-    setSelectedMuPluginId((prev) => (prev === id ? undefined : prev));
-    refreshMuPluginLibrary();
   };
 
   const runInstallMuPlugin = async (dryRun: boolean) => {
@@ -557,14 +480,14 @@ const PluginManager: React.FC = () => {
                     <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                       Thư viện plugin đã upload - tick chọn để cài, không cần tải lại từ máy mỗi lần.
                     </Typography.Paragraph>
-                    <Button icon={<UploadOutlined />} onClick={() => setZipUploadOpen(true)}>
+                    <Button icon={<UploadOutlined />} onClick={() => zip.setUploadOpen(true)}>
                       Tải plugin mới lên thư viện
                     </Button>
                   </div>
                   <Table<API.PluginZipItem>
                     size="small"
                     rowKey="id"
-                    dataSource={zipLibrary}
+                    dataSource={zip.library}
                     pagination={false}
                     rowSelection={{
                       selectedRowKeys: selectedZipIds,
@@ -580,7 +503,7 @@ const PluginManager: React.FC = () => {
                         title: '',
                         width: 48,
                         render: (_, r) => (
-                          <Popconfirm title={`Xoá "${r.label}" khỏi thư viện?`} onConfirm={() => handleZipDelete(r.id)}>
+                          <Popconfirm title={`Xoá "${r.label}" khỏi thư viện?`} onConfirm={() => zip.handleDelete(r.id)}>
                             <Button size="small" danger type="text" icon={<DeleteOutlined />} />
                           </Popconfirm>
                         ),
@@ -613,14 +536,14 @@ const PluginManager: React.FC = () => {
                     <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                       Thư viện theme đã upload - tick chọn để cài, không cần tải lại từ máy mỗi lần.
                     </Typography.Paragraph>
-                    <Button icon={<UploadOutlined />} onClick={() => setThemeZipUploadOpen(true)}>
+                    <Button icon={<UploadOutlined />} onClick={() => theme.setUploadOpen(true)}>
                       Tải theme mới lên thư viện
                     </Button>
                   </div>
                   <Table<API.ThemeZipItem>
                     size="small"
                     rowKey="id"
-                    dataSource={themeZipLibrary}
+                    dataSource={theme.library}
                     pagination={false}
                     rowSelection={{
                       selectedRowKeys: selectedThemeZipIds,
@@ -636,7 +559,7 @@ const PluginManager: React.FC = () => {
                         title: '',
                         width: 48,
                         render: (_, r) => (
-                          <Popconfirm title={`Xoá "${r.label}" khỏi thư viện?`} onConfirm={() => handleThemeZipDelete(r.id)}>
+                          <Popconfirm title={`Xoá "${r.label}" khỏi thư viện?`} onConfirm={() => theme.handleDelete(r.id)}>
                             <Button size="small" danger type="text" icon={<DeleteOutlined />} />
                           </Popconfirm>
                         ),
@@ -669,14 +592,14 @@ const PluginManager: React.FC = () => {
                     <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                       Thư viện mu-plugin (.php) đã upload - chọn 1 để triển khai.
                     </Typography.Paragraph>
-                    <Button icon={<UploadOutlined />} onClick={() => setMuPluginUploadOpen(true)}>
+                    <Button icon={<UploadOutlined />} onClick={() => muPlugin.setUploadOpen(true)}>
                       Tải mu-plugin mới lên thư viện
                     </Button>
                   </div>
                   <Table<API.MuPluginItem>
                     size="small"
                     rowKey="id"
-                    dataSource={muPluginLibrary}
+                    dataSource={muPlugin.library}
                     pagination={false}
                     rowSelection={{
                       type: 'radio',
@@ -693,7 +616,7 @@ const PluginManager: React.FC = () => {
                         title: '',
                         width: 48,
                         render: (_, r) => (
-                          <Popconfirm title={`Xoá "${r.label}" khỏi thư viện?`} onConfirm={() => handleMuPluginDelete(r.id)}>
+                          <Popconfirm title={`Xoá "${r.label}" khỏi thư viện?`} onConfirm={() => muPlugin.handleDelete(r.id)}>
                             <Button size="small" danger type="text" icon={<DeleteOutlined />} />
                           </Popconfirm>
                         ),
@@ -769,27 +692,27 @@ const PluginManager: React.FC = () => {
 
       <Modal
         title="Tải plugin mới lên thư viện"
-        open={zipUploadOpen}
+        open={zip.uploadOpen}
         onCancel={() => {
-          setZipUploadOpen(false);
-          setZipUploadLabel('');
-          setZipUploadFileList([]);
+          zip.setUploadOpen(false);
+          zip.setUploadLabel('');
+          zip.setUploadFileList([]);
         }}
-        onOk={handleZipUpload}
-        confirmLoading={zipUploading}
-        okButtonProps={{ disabled: !zipUploadFile || !zipUploadLabel.trim() }}
+        onOk={zip.handleUpload}
+        confirmLoading={zip.uploading}
+        okButtonProps={{ disabled: !zip.uploadFile || !zip.uploadLabel.trim() }}
         destroyOnHidden
       >
         <Space direction="vertical" style={{ width: '100%' }}>
           <Input
             placeholder="Nhãn (VD: Rank Math Pro)"
-            value={zipUploadLabel}
-            onChange={(e) => setZipUploadLabel(e.target.value)}
+            value={zip.uploadLabel}
+            onChange={(e) => zip.setUploadLabel(e.target.value)}
           />
           <Upload.Dragger
             accept=".zip"
             maxCount={1}
-            fileList={zipUploadFileList}
+            fileList={zip.uploadFileList}
             beforeUpload={(f) => {
               if (!f.name.toLowerCase().endsWith('.zip')) {
                 message.error('Chỉ chấp nhận file .zip');
@@ -797,10 +720,10 @@ const PluginManager: React.FC = () => {
               }
               // Tự điền nhãn từ tên file nếu chưa gõ - bấm kéo-thả xong là đủ
               // điều kiện bấm "Đồng ý" ngay, không bắt buộc gõ tay trước.
-              setZipUploadLabel((prev) => (prev.trim() ? prev : f.name.replace(/\.zip$/i, '')));
+              zip.setUploadLabel((prev) => (prev.trim() ? prev : f.name.replace(/\.zip$/i, '')));
               return false;
             }}
-            onChange={(info) => setZipUploadFileList(info.fileList.slice(-1))}
+            onChange={(info) => zip.setUploadFileList(info.fileList.slice(-1))}
           >
             <p className="ant-upload-text">Kéo thả hoặc bấm để chọn file .zip</p>
           </Upload.Dragger>
@@ -809,36 +732,36 @@ const PluginManager: React.FC = () => {
 
       <Modal
         title="Tải theme mới lên thư viện"
-        open={themeZipUploadOpen}
+        open={theme.uploadOpen}
         onCancel={() => {
-          setThemeZipUploadOpen(false);
-          setThemeZipUploadLabel('');
-          setThemeZipUploadFileList([]);
+          theme.setUploadOpen(false);
+          theme.setUploadLabel('');
+          theme.setUploadFileList([]);
         }}
-        onOk={handleThemeZipUpload}
-        confirmLoading={themeZipUploading}
-        okButtonProps={{ disabled: !themeZipUploadFile || !themeZipUploadLabel.trim() }}
+        onOk={theme.handleUpload}
+        confirmLoading={theme.uploading}
+        okButtonProps={{ disabled: !theme.uploadFile || !theme.uploadLabel.trim() }}
         destroyOnHidden
       >
         <Space direction="vertical" style={{ width: '100%' }}>
           <Input
             placeholder="Nhãn (VD: Astra Pro)"
-            value={themeZipUploadLabel}
-            onChange={(e) => setThemeZipUploadLabel(e.target.value)}
+            value={theme.uploadLabel}
+            onChange={(e) => theme.setUploadLabel(e.target.value)}
           />
           <Upload.Dragger
             accept=".zip"
             maxCount={1}
-            fileList={themeZipUploadFileList}
+            fileList={theme.uploadFileList}
             beforeUpload={(f) => {
               if (!f.name.toLowerCase().endsWith('.zip')) {
                 message.error('Chỉ chấp nhận file .zip');
                 return Upload.LIST_IGNORE;
               }
-              setThemeZipUploadLabel((prev) => (prev.trim() ? prev : f.name.replace(/\.zip$/i, '')));
+              theme.setUploadLabel((prev) => (prev.trim() ? prev : f.name.replace(/\.zip$/i, '')));
               return false;
             }}
-            onChange={(info) => setThemeZipUploadFileList(info.fileList.slice(-1))}
+            onChange={(info) => theme.setUploadFileList(info.fileList.slice(-1))}
           >
             <p className="ant-upload-text">Kéo thả hoặc bấm để chọn file .zip</p>
           </Upload.Dragger>
@@ -847,15 +770,15 @@ const PluginManager: React.FC = () => {
 
       <Modal
         title="Tải mu-plugin mới lên thư viện"
-        open={muPluginUploadOpen}
+        open={muPlugin.uploadOpen}
         onCancel={() => {
-          setMuPluginUploadOpen(false);
-          setMuPluginUploadLabel('');
-          setMuPluginUploadFileList([]);
+          muPlugin.setUploadOpen(false);
+          muPlugin.setUploadLabel('');
+          muPlugin.setUploadFileList([]);
         }}
-        onOk={handleMuPluginUpload}
-        confirmLoading={muPluginUploading}
-        okButtonProps={{ disabled: !muPluginUploadFile || !muPluginUploadLabel.trim() }}
+        onOk={muPlugin.handleUpload}
+        confirmLoading={muPlugin.uploading}
+        okButtonProps={{ disabled: !muPlugin.uploadFile || !muPlugin.uploadLabel.trim() }}
         destroyOnHidden
       >
         <Space direction="vertical" style={{ width: '100%' }}>
@@ -866,22 +789,22 @@ const PluginManager: React.FC = () => {
           />
           <Input
             placeholder="Nhãn (VD: Force SSL admin)"
-            value={muPluginUploadLabel}
-            onChange={(e) => setMuPluginUploadLabel(e.target.value)}
+            value={muPlugin.uploadLabel}
+            onChange={(e) => muPlugin.setUploadLabel(e.target.value)}
           />
           <Upload.Dragger
             accept=".php"
             maxCount={1}
-            fileList={muPluginUploadFileList}
+            fileList={muPlugin.uploadFileList}
             beforeUpload={(f) => {
               if (!f.name.toLowerCase().endsWith('.php')) {
                 message.error('Chỉ chấp nhận file .php');
                 return Upload.LIST_IGNORE;
               }
-              setMuPluginUploadLabel((prev) => (prev.trim() ? prev : f.name.replace(/\.php$/i, '')));
+              muPlugin.setUploadLabel((prev) => (prev.trim() ? prev : f.name.replace(/\.php$/i, '')));
               return false;
             }}
-            onChange={(info) => setMuPluginUploadFileList(info.fileList.slice(-1))}
+            onChange={(info) => muPlugin.setUploadFileList(info.fileList.slice(-1))}
           >
             <p className="ant-upload-text">Kéo thả hoặc bấm để chọn file .php</p>
           </Upload.Dragger>
