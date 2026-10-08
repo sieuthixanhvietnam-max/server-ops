@@ -36,8 +36,10 @@ export const JOB_TYPE_LABELS: Record<string, string> = {
   maintenance_fix_permissions: 'Phân quyền file',
   maintenance_clean_junk: 'Dọn rác ổ đĩa',
   // Khôi phục
-  restore_list_backups: 'Xem danh sách backup',
   restore_wpsite: 'Khôi phục WordPress',
+  // Người dùng WP
+  export_usernames: 'Xuất Username',
+  remove_backdoor_users: 'Xoá User Backdoor',
   // Cloudflare - domain/zone
   cf_add: 'Thêm CF Domain',
   cf_remove: 'Xoá CF Domain',
@@ -84,8 +86,9 @@ export const JOB_TYPE_COLORS: Record<string, string> = {
   maintenance_clear_comments: 'cyan',
   maintenance_fix_permissions: 'cyan',
   maintenance_clean_junk: 'cyan',
-  restore_list_backups: 'volcano',
   restore_wpsite: 'volcano',
+  export_usernames: 'default',
+  remove_backdoor_users: 'red',
   cf_add: 'orange',
   cf_remove: 'orange',
   cf_change_ip: 'orange',
