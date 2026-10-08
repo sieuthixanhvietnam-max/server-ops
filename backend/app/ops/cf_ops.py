@@ -70,13 +70,19 @@ class CFClient:
         return self._request("DELETE", url, **kw)
 
     def _err_msg(self, data):
-        errs = data.get("errors", [])
-        # `.get("message", "unknown error")` only falls back when the key is
-        # MISSING - Cloudflare sometimes sends {"message": null} (e.g. some
-        # validation failures put the real detail in "messages" instead),
-        # which .get() happily returns as-is, so the `or` is load-bearing
-        # here, not redundant with the .get default.
-        return (errs[0].get("message") or "unknown error") if errs else "unknown error"
+        # Cloudflare doesn't always put the useful detail in `errors` - a
+        # bot_management 400 came back live with errors=[{"message": "Bad
+        # Request"}] (useless) and the actual reason ("cannot enable
+        # Fight_Mode while EnableJS is disabled") only in `messages`
+        # instead. Collect every non-empty message from both, deduped, so
+        # a caller never sees just "Bad Request" when Cloudflare actually
+        # explained why.
+        texts = []
+        for item in data.get("errors", []) + data.get("messages", []):
+            msg = item.get("message")
+            if msg and msg not in texts:
+                texts.append(msg)
+        return "; ".join(texts) if texts else "unknown error"
 
     def verify_token(self):
         return self._get("https://api.cloudflare.com/client/v4/user/tokens/verify")
@@ -339,11 +345,15 @@ class CFClient:
         confirmed live against a real production zone (Cloudflare returned
         "Undefined zone setting: bot_fight_mode", and the full settings list
         for that zone doesn't contain it at all). The actual toggle lives on
-        the dedicated bot_management resource instead. Requires the API
-        token to carry the "Bot Management Read/Edit" permission - without
-        it this call 403s with an auth error rather than a 404, since the
-        endpoint itself is real, just not authorized for this token."""
-        r = self._put(f"{CF_BASE}/{zone_id}/bot_management", json={"fight_mode": enabled})
+        the dedicated bot_management resource instead.
+
+        Also sets enable_js alongside fight_mode - Cloudflare rejects
+        fight_mode=true with a generic "Bad Request" if enable_js is
+        currently off for the zone ("cannot enable Fight_Mode while
+        EnableJS is disabled", confirmed live). enable_js has no other
+        role anywhere in this app, so it's simplest to just tie it 1:1 to
+        the same enabled flag rather than read-then-conditionally-patch."""
+        r = self._put(f"{CF_BASE}/{zone_id}/bot_management", json={"fight_mode": enabled, "enable_js": enabled})
         if r.get("success"):
             return True, f"Bot Fight Mode {'on' if enabled else 'off'}"
         return False, self._err_msg(r)
