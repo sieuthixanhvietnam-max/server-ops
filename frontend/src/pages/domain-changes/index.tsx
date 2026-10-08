@@ -5,6 +5,7 @@ import {
   listDomainProviders,
   listPics,
 } from '@/services/serverOps/api';
+import { formatDateTime } from '@/utils/dateFormat';
 import { exportToCsv } from '@/utils/exportCsv';
 import { EVENT_LABELS, EVENT_TAG_COLORS, useEventTextColors } from '@/utils/domainChangeEvent';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
@@ -85,7 +86,7 @@ const DomainChanges: React.FC = () => {
           formatServerCell(item),
           item.provider,
           item.profile,
-          dayjs(item.detected_at).format('YYYY-MM-DD HH:mm:ss'),
+          formatDateTime(item.detected_at),
         ]),
       );
       message.success(`Đã xuất ${data.length} dòng`);
@@ -155,7 +156,7 @@ const DomainChanges: React.FC = () => {
       dataIndex: 'detected_at',
       valueType: 'dateRange',
       sorter: true,
-      render: (_, record) => dayjs(record.detected_at).format('YYYY-MM-DD HH:mm:ss'),
+      render: (_, record) => formatDateTime(record.detected_at),
       search: {
         transform: (value: any) => ({
           date_from: value?.[0] ? dayjs(value[0]).startOf('day').toISOString() : undefined,

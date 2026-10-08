@@ -2,6 +2,7 @@ import BatchListFilter from '@/components/BatchListFilter';
 import PicEditor from '@/components/PicEditor';
 import { listPics, listServerProfiles, listServers, triggerSync } from '@/services/serverOps/api';
 import { copyText } from '@/utils/clipboard';
+import { formatDateTime } from '@/utils/dateFormat';
 import { exportToCsv } from '@/utils/exportCsv';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
 import { toPicFilterOptions } from '@/utils/picOptions';
@@ -70,7 +71,7 @@ const ServerList: React.FC = () => {
           s.domains_count,
           (s.pics || []).join('; '),
           (s.teams || []).join('; '),
-          s.source_updated ? dayjs(s.source_updated).format('YYYY-MM-DD HH:mm:ss') : '',
+          s.source_updated ? formatDateTime(s.source_updated) : '',
         ]),
       );
       message.success(`Đã xuất ${data.length} dòng`);
@@ -162,7 +163,7 @@ const ServerList: React.FC = () => {
       dataIndex: 'source_updated',
       search: false,
       sorter: true,
-      render: (_, record) => (record.source_updated ? dayjs(record.source_updated).format('YYYY-MM-DD HH:mm:ss') : '-'),
+      render: (_, record) => formatDateTime(record.source_updated),
     },
     {
       title: 'PIC',

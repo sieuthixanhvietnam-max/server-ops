@@ -13,6 +13,7 @@ import {
   triggerCfMasterDiscover,
 } from '@/services/serverOps/api';
 import { copyText } from '@/utils/clipboard';
+import { formatDateTime } from '@/utils/dateFormat';
 import { exportToCsv } from '@/utils/exportCsv';
 import { summarizeJobResult } from '@/utils/jobResult';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
@@ -128,7 +129,7 @@ const CfAccounts: React.FC = () => {
           a.source === 'master' ? 'Master Token' : 'Thủ công',
           a.zone_count,
           STATUS_LABELS[a.last_sync_status] || a.last_sync_status,
-          a.last_synced_at ? dayjs(a.last_synced_at).format('YYYY-MM-DD HH:mm:ss') : '',
+          a.last_synced_at ? formatDateTime(a.last_synced_at) : '',
         ]),
       );
       message.success(`Đã xuất ${data.length} dòng`);
@@ -266,7 +267,7 @@ const CfAccounts: React.FC = () => {
       dataIndex: 'last_synced_at',
       search: false,
       sorter: true,
-      render: (_, r) => (r.last_synced_at ? dayjs(r.last_synced_at).format('YYYY-MM-DD HH:mm:ss') : '-'),
+      render: (_, r) => formatDateTime(r.last_synced_at),
     },
     { title: 'Ghi chú lỗi', dataIndex: 'last_sync_error', search: false, ellipsis: true },
     {

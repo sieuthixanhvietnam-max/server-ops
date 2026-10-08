@@ -1,5 +1,6 @@
 import KpiCard from '@/components/KpiCard';
 import { getRedirectWeeklyReport } from '@/services/serverOps/api';
+import { formatDateTime, formatDateTimeShort } from '@/utils/dateFormat';
 import { exportToCsv } from '@/utils/exportCsv';
 import { mondayOf, weekLabel, weekStartsBetween } from '@/utils/week';
 import {
@@ -251,7 +252,7 @@ const RedirectReport: React.FC = () => {
       weekLabel(r.week_start),
       r.domain,
       r.target_url,
-      dayjs(r.redirected_at).format('YYYY-MM-DD HH:mm:ss'),
+      formatDateTime(r.redirected_at),
       r.job_id,
     ]);
 
@@ -593,7 +594,7 @@ const RedirectReport: React.FC = () => {
                 {
                   title: 'Thời điểm',
                   dataIndex: 'redirected_at',
-                  render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
+                  render: (v: string) => formatDateTimeShort(v),
                 },
                 { title: 'Job', dataIndex: 'job_id', render: (v: number) => `#${v}` },
               ]}

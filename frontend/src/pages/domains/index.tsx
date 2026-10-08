@@ -13,6 +13,7 @@ import {
   triggerSync,
 } from '@/services/serverOps/api';
 import { copyText } from '@/utils/clipboard';
+import { formatDateTime } from '@/utils/dateFormat';
 import { exportToCsv } from '@/utils/exportCsv';
 import { toPicFilterOptions } from '@/utils/picOptions';
 import { PROVIDER_COLORS } from '@/utils/providerColors';
@@ -98,7 +99,7 @@ const DomainList: React.FC = () => {
           d.profile,
           d.server_name,
           d.server_ip,
-          d.source_updated ? dayjs(d.source_updated).format('YYYY-MM-DD HH:mm:ss') : '',
+          d.source_updated ? formatDateTime(d.source_updated) : '',
         ]),
       );
       message.success(`Đã xuất ${data.length} dòng`);
@@ -235,7 +236,7 @@ const DomainList: React.FC = () => {
       dataIndex: 'source_updated',
       search: false,
       sorter: true,
-      render: (_, record) => (record.source_updated ? dayjs(record.source_updated).format('YYYY-MM-DD HH:mm:ss') : '-'),
+      render: (_, record) => formatDateTime(record.source_updated),
     },
   ];
 

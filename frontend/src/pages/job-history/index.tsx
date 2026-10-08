@@ -10,6 +10,7 @@ import {
   JOB_TYPE_LABELS,
   JOB_TYPE_OPTIONS,
 } from '@/utils/jobConstants';
+import { formatDateTime } from '@/utils/dateFormat';
 import { summarizeJobResult } from '@/utils/jobResult';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
 import { HistoryOutlined } from '@ant-design/icons';
@@ -100,7 +101,7 @@ const JobHistory: React.FC = () => {
       title: 'Thời gian tạo',
       dataIndex: 'created_at',
       valueType: 'dateRange',
-      render: (_, r) => dayjs(r.created_at).format('YYYY-MM-DD HH:mm:ss'),
+      render: (_, r) => formatDateTime(r.created_at),
       search: {
         transform: (value: any) => ({
           date_from: value?.[0] ? dayjs(value[0]).startOf('day').toISOString() : undefined,
@@ -112,7 +113,7 @@ const JobHistory: React.FC = () => {
       title: 'Hoàn tất lúc',
       dataIndex: 'finished_at',
       search: false,
-      render: (_, r) => (r.finished_at ? dayjs(r.finished_at).format('YYYY-MM-DD HH:mm:ss') : '-'),
+      render: (_, r) => formatDateTime(r.finished_at),
     },
     {
       title: 'Hành động',
@@ -156,12 +157,8 @@ const JobHistory: React.FC = () => {
             <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
               <Descriptions.Item label="Người chạy">{detailJob.created_by}</Descriptions.Item>
               <Descriptions.Item label="IP">{detailJob.created_ip || '-'}</Descriptions.Item>
-              <Descriptions.Item label="Tạo lúc">
-                {dayjs(detailJob.created_at).format('YYYY-MM-DD HH:mm:ss')}
-              </Descriptions.Item>
-              <Descriptions.Item label="Hoàn tất lúc">
-                {detailJob.finished_at ? dayjs(detailJob.finished_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
-              </Descriptions.Item>
+              <Descriptions.Item label="Tạo lúc">{formatDateTime(detailJob.created_at)}</Descriptions.Item>
+              <Descriptions.Item label="Hoàn tất lúc">{formatDateTime(detailJob.finished_at)}</Descriptions.Item>
             </Descriptions>
 
             <Typography.Title level={5}>Tham số</Typography.Title>
