@@ -13,18 +13,23 @@ _DEFAULT_SKIP_PATHS = ["/wp-json/"]
 _DEFAULT_SKIP_ASNS = ["15169"]  # Google
 _DEFAULT_ALLOWED_PORTS = ["80", "443"]
 _DEFAULT_ALLOWED_UA_SUBSTRINGS = ["mozilla", "opera"]
-# The exact IPs that used to live in the standalone "Whitelist IP" page
-# (its own table, shared by every zone) before that page was folded into
-# per-preset whitelist_ips - seeded onto the "Mặc định" preset so the real
-# bot/office IPs this org already relies on survive the fold-in unchanged.
+# The exact IPs live in production's cf_whitelist_ips table as of 2026-10-08
+# (queried directly via psql on the production host, not the original 33-IP
+# hardcoded migration list - 3 had been added by hand since then: 146.190.
+# 87.62 "ops-vps", 166.88.120.246 "S TRUST", 192.177.66.24 "Q Gum") - seeded
+# onto the "Mặc định" preset so the real bot/office IPs this org already
+# relies on survive the standalone "Whitelist IP" page's retirement
+# unchanged. If this list and production's cf_whitelist_ips ever drift
+# again before this deploys, re-query production rather than trusting this
+# comment's age.
 _DEFAULT_WHITELIST_IPS = [
     "8.222.213.17",
     "104.253.193.165", "122.248.206.212", "139.59.224.39",
-    "142.111.69.199", "159.192.43.132", "139.59.227.174",
+    "142.111.69.199", "146.190.87.62", "159.192.43.132", "139.59.227.174",
     "166.88.119.110", "166.88.119.210", "166.88.119.211",
     "166.88.119.214", "166.88.119.249", "166.88.119.250",
-    "166.88.119.251", "171.233.128.13", "192.168.1.5",
-    "192.168.1.70", "192.177.66.44", "192.177.68.187",
+    "166.88.119.251", "166.88.120.246", "171.233.128.13", "192.168.1.5",
+    "192.168.1.70", "192.177.66.24", "192.177.66.44", "192.177.68.187",
     "192.177.68.225", "192.177.68.226", "192.177.68.35",
     "192.177.68.48", "192.177.71.1", "192.177.71.113",
     "192.177.71.221", "192.177.71.222", "192.177.71.61",
