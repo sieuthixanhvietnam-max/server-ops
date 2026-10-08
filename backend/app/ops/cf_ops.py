@@ -612,12 +612,13 @@ def add_domains(
     domain landed in without re-deriving it. firewall_preset: the resolved
     preset-params dict (see firewall_preset_service.preset_to_params) to
     apply to the new zone's firewall - this flow has no preset picker of its
-    own, so the caller always resolves the "Mặc định" preset here."""
-    firewall_preset = firewall_preset or {
-        "countries_blocked": [], "blocked_user_agents": [], "blocked_paths": [], "bot_fight_mode": False,
-        "whitelist_ips": [], "skip_paths": ["/wp-json/"], "skip_verified_bot": True,
-        "skip_asns": ["15169"], "allowed_ports": ["80", "443"], "allowed_ua_substrings": ["mozilla", "opera"],
-    }
+    own, so the caller always resolves the "Mặc định" preset here. Every
+    caller (routers/jobs_cf.py) always passes this explicitly - there used to be
+    a hardcoded fallback dict here for a None case that's never actually
+    reached, which could silently drift from the real DB-backed default that
+    firewall_preset_service.get_default_preset_params exists specifically to
+    be the single source of truth for."""
+    assert firewall_preset is not None, "caller must resolve a preset (get_default_preset_params/preset_to_params)"
     cf = CFClient(api_token)
     log(f"Adding {len(entries)} domain(s) to Cloudflare...")
 
@@ -959,57 +960,6 @@ def remove_redirects(domains: list[str], log, dry_run: bool = False) -> list[dic
     return _parallel(_one, domains, workers=5)
 
 
-def update_firewall(
-    log, dry_run: bool = False, domains: list[str] | None = None,
-    preset: dict | None = None,
-) -> list[dict]:
-    """Re-applies the firewall ruleset (skip whitelist/bots/Google ASN,
-    block everything else risky per the resolved preset) to zones.
-    domains=None means "every zone the master token can see" - ported from
-    cftasks.py --update-fw --all-zones, including its batching (tens of
-    thousands of zones is the real scale here, see _parallel_batched).
-    Passing an explicit domain list skips batching since that's always a
-    small, deliberate set. preset: the preset-params dict (see
-    firewall_preset_service.preset_to_params) plus "name" - "name" is
-    echoed into every result row so which preset a job used is visible
-    afterward (in the job log/result/CSV export) without anyone having had
-    to check beforehand."""
-    preset = preset or {
-        "name": "Mặc định", "countries_blocked": [], "blocked_user_agents": [],
-        "blocked_paths": [], "bot_fight_mode": False, "whitelist_ips": [], "skip_paths": ["/wp-json/"],
-        "skip_verified_bot": True, "skip_asns": ["15169"],
-        "allowed_ports": ["80", "443"], "allowed_ua_substrings": ["mozilla", "opera"],
-    }
-    cf = CFClient()
-
-    def _one(domain):
-        zone_id = cf.get_zone_id(domain)
-        if not zone_id:
-            log(f"[fail] {domain}: zone not found")
-            return {"domain": domain, "status": "error", "note": "zone not found", "preset": preset["name"]}
-        if dry_run:
-            log(f"[dry-run] would apply firewall preset '{preset['name']}' to {domain} [{zone_id}]")
-            return {"domain": domain, "status": "DRYRUN", "note": "no changes made", "preset": preset["name"]}
-        ok, msg = cf.set_firewall_rules_result(zone_id, preset)
-        if ok:
-            log(f"[ ok ] {domain}: {msg}")
-            return {"domain": domain, "status": "ok", "note": msg, "preset": preset["name"]}
-        log(f"[fail] {domain}: {msg}")
-        return {"domain": domain, "status": "error", "note": msg, "preset": preset["name"]}
-
-    if domains is not None:
-        log(f"Áp dụng Firewall cho {len(domains)} domain(s)...")
-        return _parallel(_one, domains, workers=5)
-
-    log("Lấy toàn bộ zone trong account (master token)...")
-    zones = cf.list_all_zones(per_page=1000)
-    log(f"Tìm thấy {len(zones)} zone(s). Bắt đầu áp dụng theo batch...")
-    with cf._cache_lock:
-        for z in zones:
-            cf._zone_cache[z["name"]] = z["id"]
-    return _parallel_batched(_one, [z["name"] for z in zones], log)
-
-
 def audit_page_rules(log) -> list[dict]:
     """Scans every zone the master token can see for Page Rule redirect
     (forwarding_url) misconfigurations. Built after finding sports-online.biz
@@ -1068,7 +1018,7 @@ def _strip_wildcard_suffix(url: str) -> str:
 def list_redirects(zone_pairs: list[dict], log) -> list[dict]:
     """zone_pairs: [{"domain", "zone_id"}] - every currently-hosted domain
     already matched to its Cloudflare zone (resolved from the Domain/CfZone
-    tables in routers/jobs.py, not fetched live here - both are synced
+    tables in routers/jobs_cf.py, not fetched live here - both are synced
     periodically, so this needs zero "which zone is this domain in" API
     calls, unlike audit_page_rules). Returns a flat inventory of every
     forwarding_url Page Rule found: {domain, target, target_domain, code,

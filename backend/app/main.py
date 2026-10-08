@@ -30,6 +30,10 @@ from app.routers import (
     domains,
     firewall_presets,
     jobs,
+    jobs_cf,
+    jobs_maintenance,
+    jobs_plugins,
+    jobs_wp,
     mu_plugins,
     pics,
     plugin_zips,
@@ -200,6 +204,10 @@ app.include_router(domain_changes.router)
 app.include_router(servers.router)
 app.include_router(sync.router)
 app.include_router(jobs.router)
+app.include_router(jobs_wp.router)
+app.include_router(jobs_cf.router)
+app.include_router(jobs_plugins.router)
+app.include_router(jobs_maintenance.router)
 app.include_router(cf_accounts.router)
 app.include_router(cf_zones.router)
 app.include_router(firewall_presets.router)
