@@ -19,15 +19,14 @@ from app.cf_account_service import (
     sync_all_accounts,
     sync_one_account,
 )
-from app.cf_firewall_template_service import get_default_template_params, template_to_params
-from app.cf_whitelist_service import get_active_whitelist_ips
 from app.config import settings
 from app.crypto import decrypt_token
 from app.database import SessionLocal, get_db
+from app.firewall_preset_service import get_default_preset_params, preset_to_params
 from app.health_service import health_check_lock, persist_health_results
 from app.job_service import create_job, launch_job
 from app.models import (
-    CfAccount, CfFirewallTemplate, CfZone, Domain, IndexerCredential, Job, JobTarget, MuPlugin, PluginZip, Server,
+    CfAccount, CfZone, Domain, FirewallPreset, IndexerCredential, Job, JobTarget, MuPlugin, PluginZip, Server,
     ThemeZip,
 )
 from app.ops import (
@@ -201,7 +200,7 @@ class CfFirewallUpdateRequest(BaseModel):
     mode: Literal["domains", "all_zones"]
     domains: list[str] = []
     dry_run: bool = True
-    template_id: int
+    preset_id: int
 
 
 class CfPurgeCacheRequest(BaseModel):
@@ -706,8 +705,7 @@ async def trigger_cf_add(
         if target_account.source == "manual" and target_account.api_token_encrypted:
             api_token = decrypt_token(target_account.api_token_encrypted)
 
-    whitelist_ips = get_active_whitelist_ips(db)
-    firewall_template = get_default_template_params(db)
+    firewall_preset = get_default_preset_params(db)
 
     job = create_job(
         db, "cf_add",
@@ -723,8 +721,8 @@ async def trigger_cf_add(
         for d in invalid:
             ctx.log(f"[skip] {d}: invalid domain format")
         return await asyncio.to_thread(
-            cf_ops.add_domains, entries, ctx.log, whitelist_ips, body.dry_run, api_token, cf_account_id,
-            body.force_reconfigure, account_label, firewall_template,
+            cf_ops.add_domains, entries, ctx.log, body.dry_run, api_token, cf_account_id,
+            body.force_reconfigure, account_label, firewall_preset,
         )
 
     launch_job(job.id, worker)
@@ -793,8 +791,7 @@ async def trigger_cf_add_batch(
         all_invalid = [d for rg in resolved for d in rg["invalid"]]
         raise HTTPException(status_code=400, detail="No valid domains in any group: " + ", ".join(all_invalid))
 
-    whitelist_ips = get_active_whitelist_ips(db)
-    firewall_template = get_default_template_params(db)
+    firewall_preset = get_default_preset_params(db)
 
     job = create_job(
         db, "cf_add",
@@ -815,9 +812,9 @@ async def trigger_cf_add_batch(
             ctx.log(f"[info] {rg['account_note']}")
             try:
                 group_results = await asyncio.to_thread(
-                    cf_ops.add_domains, rg["entries"], ctx.log, whitelist_ips, body.dry_run,
+                    cf_ops.add_domains, rg["entries"], ctx.log, body.dry_run,
                     rg["api_token"], rg["cf_account_id"], body.force_reconfigure, rg["account_label"],
-                    firewall_template,
+                    firewall_preset,
                 )
                 results.extend(group_results)
             except Exception as exc:
@@ -1085,17 +1082,10 @@ async def trigger_cf_firewall_update(
     db: Session = Depends(get_db),
     username: str = Depends(get_current_username),
 ):
-    whitelist_ips = get_active_whitelist_ips(db)
-    if not whitelist_ips:
-        raise HTTPException(
-            status_code=400,
-            detail="Chưa có IP whitelist nào đang bật - thêm ở trang Whitelist IP trước",
-        )
-
-    template_row = db.get(CfFirewallTemplate, body.template_id)
-    if not template_row:
-        raise HTTPException(status_code=404, detail="Firewall template not found")
-    template = template_to_params(template_row)
+    preset_row = db.get(FirewallPreset, body.preset_id)
+    if not preset_row:
+        raise HTTPException(status_code=404, detail="Firewall preset not found")
+    preset = preset_to_params(preset_row)
 
     if body.mode == "domains":
         if not body.domains:
@@ -1108,7 +1098,7 @@ async def trigger_cf_firewall_update(
             db, "cf_firewall_update",
             {
                 "mode": "domains", "domains": body.domains, "dry_run": body.dry_run, "invalid": invalid,
-                "template": template["name"],
+                "preset": preset["name"],
             },
             username, get_client_ip(request),
         )
@@ -1116,21 +1106,19 @@ async def trigger_cf_firewall_update(
         async def worker(ctx):
             for d in invalid:
                 ctx.log(f"[skip] {d}: invalid domain format")
-            return await asyncio.to_thread(
-                cf_ops.update_firewall, ctx.log, whitelist_ips, body.dry_run, valid, template
-            )
+            return await asyncio.to_thread(cf_ops.update_firewall, ctx.log, body.dry_run, valid, preset)
 
         launch_job(job.id, worker)
         return {"job_id": job.id}
 
     job = create_job(
         db, "cf_firewall_update",
-        {"mode": "all_zones", "dry_run": body.dry_run, "template": template["name"]},
+        {"mode": "all_zones", "dry_run": body.dry_run, "preset": preset["name"]},
         username, get_client_ip(request),
     )
 
     async def worker(ctx):
-        return await asyncio.to_thread(cf_ops.update_firewall, ctx.log, whitelist_ips, body.dry_run, None, template)
+        return await asyncio.to_thread(cf_ops.update_firewall, ctx.log, body.dry_run, None, preset)
 
     launch_job(job.id, worker)
     return {"job_id": job.id}

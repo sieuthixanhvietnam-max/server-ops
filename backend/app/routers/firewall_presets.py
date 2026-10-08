@@ -7,48 +7,49 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_username, require_admin
-from app.cf_firewall_template_service import DEFAULT_TEMPLATE_NAME
 from app.database import get_db
-from app.models import CfFirewallTemplate
-from app.schemas import CfFirewallTemplateOut
+from app.firewall_preset_service import DEFAULT_PRESET_NAME
+from app.models import FirewallPreset
+from app.ops.validation import is_valid_ip
+from app.schemas import FirewallPresetOut
 
 # Reading the list (any logged-in user - the Firewall page needs it to
-# offer a template picker) vs editing it (admin only, per the user's
-# explicit call: whoever runs the Firewall page rarely re-checks rule
-# content before confirming, so defining/changing what a template actually
-# blocks needs a stricter gate than just being logged in) require different
-# auth, so require_admin is applied per-endpoint below rather than once on
-# the whole router.
+# offer a preset picker) vs editing it (admin only, per the user's explicit
+# call: whoever runs the Firewall page rarely re-checks rule content before
+# confirming, so defining/changing what a preset actually blocks needs a
+# stricter gate than just being logged in) require different auth, so
+# require_admin is applied per-endpoint below rather than once on the whole
+# router.
 router = APIRouter(
-    prefix="/api/cf-firewall-templates",
-    tags=["cf-firewall-templates"],
+    prefix="/api/firewall-presets",
+    tags=["firewall-presets"],
     dependencies=[Depends(get_current_username)],
 )
 
 
-class CreateCfFirewallTemplateRequest(BaseModel):
+class CreateFirewallPresetRequest(BaseModel):
     name: str
     countries_blocked: list[str] = []
     blocked_user_agents: list[str] = []
     blocked_paths: list[str] = []
     bot_fight_mode: bool = False
+    whitelist_ips: list[str] = []
     skip_paths: list[str] = ["/wp-json/"]
     skip_verified_bot: bool = True
-    skip_whitelist_ip: bool = True
     skip_asns: list[str] = ["15169"]
     allowed_ports: list[str] = ["80", "443"]
     allowed_ua_substrings: list[str] = ["mozilla", "opera"]
 
 
-class UpdateCfFirewallTemplateRequest(BaseModel):
+class UpdateFirewallPresetRequest(BaseModel):
     name: str | None = None
     countries_blocked: list[str] | None = None
     blocked_user_agents: list[str] | None = None
     blocked_paths: list[str] | None = None
     bot_fight_mode: bool | None = None
+    whitelist_ips: list[str] | None = None
     skip_paths: list[str] | None = None
     skip_verified_bot: bool | None = None
-    skip_whitelist_ip: bool | None = None
     skip_asns: list[str] | None = None
     allowed_ports: list[str] | None = None
     allowed_ua_substrings: list[str] | None = None
@@ -96,35 +97,46 @@ def _normalize_asns(values: list[str]) -> list[str]:
     return out
 
 
+def _normalize_ips(values: list[str]) -> list[str]:
+    out = []
+    for v in values:
+        v = v.strip()
+        if not is_valid_ip(v):
+            raise HTTPException(status_code=400, detail=f"'{v}' không phải IPv4 hợp lệ")
+        if v not in out:
+            out.append(v)
+    return out
+
+
 @router.get("")
-def list_cf_firewall_templates(db: Session = Depends(get_db)):
+def list_firewall_presets(db: Session = Depends(get_db)):
     rows = db.execute(
-        select(CfFirewallTemplate).order_by(CfFirewallTemplate.is_default.desc(), CfFirewallTemplate.name)
+        select(FirewallPreset).order_by(FirewallPreset.is_default.desc(), FirewallPreset.name)
     ).scalars().all()
-    return {"data": [CfFirewallTemplateOut.from_row(r).model_dump() for r in rows], "success": True}
+    return {"data": [FirewallPresetOut.from_row(r).model_dump() for r in rows], "success": True}
 
 
 @router.post("", dependencies=[Depends(require_admin)])
-def create_cf_firewall_template(
-    body: CreateCfFirewallTemplateRequest,
+def create_firewall_preset(
+    body: CreateFirewallPresetRequest,
     db: Session = Depends(get_db),
     username: str = Depends(get_current_username),
 ):
     name = body.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Tên template không được để trống")
-    if db.execute(select(CfFirewallTemplate).where(CfFirewallTemplate.name == name)).scalar_one_or_none():
-        raise HTTPException(status_code=400, detail=f"Template '{name}' đã tồn tại")
+        raise HTTPException(status_code=400, detail="Tên preset không được để trống")
+    if db.execute(select(FirewallPreset).where(FirewallPreset.name == name)).scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Preset '{name}' đã tồn tại")
 
-    row = CfFirewallTemplate(
+    row = FirewallPreset(
         name=name,
         countries_blocked=json.dumps(_normalize_countries(body.countries_blocked)),
         blocked_user_agents=json.dumps(_normalize_strings(body.blocked_user_agents)),
         blocked_paths=json.dumps(_normalize_strings(body.blocked_paths)),
         bot_fight_mode=body.bot_fight_mode,
+        whitelist_ips=json.dumps(_normalize_ips(body.whitelist_ips)),
         skip_paths=json.dumps(_normalize_strings(body.skip_paths)),
         skip_verified_bot=body.skip_verified_bot,
-        skip_whitelist_ip=body.skip_whitelist_ip,
         skip_asns=json.dumps(_normalize_asns(body.skip_asns)),
         allowed_ports=json.dumps(_normalize_ports(body.allowed_ports)),
         allowed_ua_substrings=json.dumps(_normalize_strings(body.allowed_ua_substrings)),
@@ -135,26 +147,26 @@ def create_cf_firewall_template(
     db.add(row)
     db.commit()
     db.refresh(row)
-    return CfFirewallTemplateOut.from_row(row).model_dump()
+    return FirewallPresetOut.from_row(row).model_dump()
 
 
-@router.put("/{template_id}", dependencies=[Depends(require_admin)])
-def update_cf_firewall_template(
-    template_id: int, body: UpdateCfFirewallTemplateRequest, db: Session = Depends(get_db)
+@router.put("/{preset_id}", dependencies=[Depends(require_admin)])
+def update_firewall_preset(
+    preset_id: int, body: UpdateFirewallPresetRequest, db: Session = Depends(get_db)
 ):
-    row = db.get(CfFirewallTemplate, template_id)
+    row = db.get(FirewallPreset, preset_id)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
 
     if body.name is not None:
         name = body.name.strip()
         if not name:
-            raise HTTPException(status_code=400, detail="Tên template không được để trống")
+            raise HTTPException(status_code=400, detail="Tên preset không được để trống")
         dup = db.execute(
-            select(CfFirewallTemplate).where(CfFirewallTemplate.name == name, CfFirewallTemplate.id != template_id)
+            select(FirewallPreset).where(FirewallPreset.name == name, FirewallPreset.id != preset_id)
         ).scalar_one_or_none()
         if dup:
-            raise HTTPException(status_code=400, detail=f"Template '{name}' đã tồn tại")
+            raise HTTPException(status_code=400, detail=f"Preset '{name}' đã tồn tại")
         row.name = name
     if body.countries_blocked is not None:
         row.countries_blocked = json.dumps(_normalize_countries(body.countries_blocked))
@@ -164,12 +176,12 @@ def update_cf_firewall_template(
         row.blocked_paths = json.dumps(_normalize_strings(body.blocked_paths))
     if body.bot_fight_mode is not None:
         row.bot_fight_mode = body.bot_fight_mode
+    if body.whitelist_ips is not None:
+        row.whitelist_ips = json.dumps(_normalize_ips(body.whitelist_ips))
     if body.skip_paths is not None:
         row.skip_paths = json.dumps(_normalize_strings(body.skip_paths))
     if body.skip_verified_bot is not None:
         row.skip_verified_bot = body.skip_verified_bot
-    if body.skip_whitelist_ip is not None:
-        row.skip_whitelist_ip = body.skip_whitelist_ip
     if body.skip_asns is not None:
         row.skip_asns = json.dumps(_normalize_asns(body.skip_asns))
     if body.allowed_ports is not None:
@@ -179,18 +191,18 @@ def update_cf_firewall_template(
 
     db.commit()
     db.refresh(row)
-    return CfFirewallTemplateOut.from_row(row).model_dump()
+    return FirewallPresetOut.from_row(row).model_dump()
 
 
-@router.delete("/{template_id}", dependencies=[Depends(require_admin)])
-def delete_cf_firewall_template(template_id: int, db: Session = Depends(get_db)):
-    row = db.get(CfFirewallTemplate, template_id)
+@router.delete("/{preset_id}", dependencies=[Depends(require_admin)])
+def delete_firewall_preset(preset_id: int, db: Session = Depends(get_db)):
+    row = db.get(FirewallPreset, preset_id)
     if not row:
         raise HTTPException(status_code=404, detail="not found")
     if row.is_default:
         raise HTTPException(
             status_code=400,
-            detail=f"Không thể xoá template '{DEFAULT_TEMPLATE_NAME}' - luôn cần 1 template an toàn để quay lại",
+            detail=f"Không thể xoá preset '{DEFAULT_PRESET_NAME}' - luôn cần 1 preset an toàn để quay lại",
         )
     db.delete(row)
     db.commit()

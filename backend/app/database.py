@@ -75,11 +75,14 @@ def ensure_schema_migrations() -> None:
         _add_column_if_missing(conn, "changelog_entries", "change_type", "VARCHAR DEFAULT 'fix'")
         _add_column_if_missing(conn, "jobs", "fail_reason", "VARCHAR")
         _widen_to_numeric_if_needed(conn, "provider_costs", "amount_vnd", 18, 2)
-        _add_column_if_missing(conn, "cf_firewall_templates", "skip_paths", "TEXT DEFAULT '[\"/wp-json/\"]'")
-        _add_column_if_missing(conn, "cf_firewall_templates", "skip_verified_bot", "BOOLEAN DEFAULT TRUE")
-        _add_column_if_missing(conn, "cf_firewall_templates", "skip_whitelist_ip", "BOOLEAN DEFAULT TRUE")
-        _add_column_if_missing(conn, "cf_firewall_templates", "skip_asns", "TEXT DEFAULT '[\"15169\"]'")
-        _add_column_if_missing(conn, "cf_firewall_templates", "allowed_ports", "TEXT DEFAULT '[\"80\", \"443\"]'")
-        _add_column_if_missing(
-            conn, "cf_firewall_templates", "allowed_ua_substrings", "TEXT DEFAULT '[\"mozilla\", \"opera\"]'"
-        )
+        # No incremental ALTER needed for firewall_presets/FirewallPreset -
+        # that table never shipped to production (only ever existed in local
+        # commits on this branch), so Base.metadata.create_all() above
+        # creates it fresh with every current column already in place. The
+        # old cf_whitelist_ips table IS live in production (it predates this
+        # branch) and its real IPs are carried forward into the seeded
+        # "Mặc định" preset's whitelist_ips (see firewall_preset_service.
+        # _DEFAULT_WHITELIST_IPS) - cf_whitelist_ips itself is deliberately
+        # left alone here (orphaned, not dropped): no model references it
+        # anymore, and SQLAlchemy/create_all never touches a table it
+        # doesn't know about, so leaving it in place is simply inert.

@@ -9,10 +9,9 @@ from sqlalchemy import select
 
 from app.access_control_service import get_client_ip, is_ip_allowed, seed_allowed_ips
 from app.cf_account_service import cf_sync_lock, discover_master_accounts, sync_all_accounts
-from app.cf_firewall_template_service import seed_cf_firewall_templates
-from app.cf_whitelist_service import seed_cf_whitelist_ips
 from app.config import settings
 from app.database import Base, SessionLocal, engine, ensure_schema_migrations
+from app.firewall_preset_service import seed_firewall_presets
 from app.health_service import health_check_lock, persist_health_results
 from app.infra_snapshot_service import backfill_domain_history, capture_current_week
 from app.models import Server
@@ -23,14 +22,13 @@ from app.routers import (
     auth,
     backups,
     cf_accounts,
-    cf_firewall_templates,
-    cf_whitelist,
     cf_zones,
     changelog,
     costs,
     dashboard,
     domain_changes,
     domains,
+    firewall_presets,
     jobs,
     mu_plugins,
     pics,
@@ -142,8 +140,7 @@ async def lifespan(app: FastAPI):
         seed_pic_teams(db)
         seed_known_server_pics(db)
         seed_allowed_ips(db)
-        seed_cf_whitelist_ips(db)
-        seed_cf_firewall_templates(db)
+        seed_firewall_presets(db)
         seed_admin_user(db)
         await run_sync(db)
         # Backfill (one-time, no-ops after the first successful run) must
@@ -205,8 +202,7 @@ app.include_router(sync.router)
 app.include_router(jobs.router)
 app.include_router(cf_accounts.router)
 app.include_router(cf_zones.router)
-app.include_router(cf_whitelist.router)
-app.include_router(cf_firewall_templates.router)
+app.include_router(firewall_presets.router)
 app.include_router(pics.router)
 app.include_router(access_control.router)
 app.include_router(plugin_zips.router)

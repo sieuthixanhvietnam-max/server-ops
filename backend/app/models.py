@@ -218,61 +218,48 @@ class ServerPicTeam(Base):
     team_id: Mapped[int] = mapped_column(Integer, index=True)
 
 
-class CfWhitelistIp(Base):
-    """IP whitelist baked into the "skip" rule of every zone's Cloudflare
-    Firewall ruleset (see cf_ops._build_firewall_rules) - bots/office IPs
-    that bypass the bot/country/UA/xmlrpc blocks applied to every domain.
-    Editable here instead of hardcoded in code so a new IP takes effect on
-    the next Firewall Update run, no deploy needed."""
+class FirewallPreset(Base):
+    """A named, admin-editable bundle of Cloudflare Firewall settings (see
+    cf_ops._build_firewall_rules) - pick one by name on the Firewall page
+    and apply it to a set of domains, same mental model as a camera/audio
+    "preset": a saved, nameable configuration you load rather than a
+    settings page you tweak live.
 
-    __tablename__ = "cf_whitelist_ips"
+    Every rule here is genuinely editable, not a toggle over hardcoded
+    content - same "edit the actual values" UX for all of these:
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    label: Mapped[str] = mapped_column(String, default="")
-    ip: Mapped[str] = mapped_column(String, unique=True, index=True)
-    is_active: Mapped[bool] = mapped_column(default=True)
-    note: Mapped[str] = mapped_column(String, default="")
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
-
-
-class CfFirewallTemplate(Base):
-    """A named, admin-editable variant of the rule set `cf_firewall_update`
-    applies to a zone (see cf_ops._build_firewall_rules).
-
-    The 3 rules that used to be permanently fixed for every template (skip-
-    list, port check, non-browser-UA check) are now genuinely editable, not
-    just on/off - same "edit the actual values" UX as countries_blocked/
-    blocked_user_agents/blocked_paths below, not a separate toggle concept:
-
-    - skip_paths / skip_verified_bot / skip_whitelist_ip / skip_asns: the 4
-      independent conditions that used to be hardcoded into 1 OR'd "skip"
-      rule. skip_verified_bot and skip_whitelist_ip stay plain booleans -
-      there's no "value" to edit for "use Cloudflare's own bot signal or
-      don't" / "use the Whitelist IP page's list or don't", just whether
-      each applies. skip_paths and skip_asns are admin-editable lists (e.g.
-      swap /wp-json/ for a different path, or add more trusted ASNs beyond
-      Google's 15169). Any of the 4 being off/empty just drops that OR
-      branch; all 4 off/empty omits the skip rule entirely.
+    - whitelist_ips: IPs to skip every block rule for (bots/office IPs).
+      Used to live on its own separate "Whitelist IP" page shared by every
+      template - folded directly into the preset instead, since in
+      practice each preset wants its own trusted-IP list, not one global
+      list forced onto every preset.
+    - skip_paths / skip_asns: more skip conditions - request matching any
+      of these also bypasses every block rule below (default ["/wp-json/"]
+      and ["15169"] i.e. Google).
+    - skip_verified_bot: whether Cloudflare's own cf.client.bot signal also
+      bypasses the block rules - plain boolean, no "value" to edit beyond
+      on/off.
     - allowed_ports: which ports are NOT blocked (default ["80", "443"]) -
-      editable instead of hardcoded, empty list omits the port-check rule.
+      empty list omits the port-check rule entirely.
     - allowed_ua_substrings: which lowercase substrings count as "a real
       browser" for the generic UA check (default ["mozilla", "opera"]) -
-      editable, empty list omits the UA-check rule.
+      empty list omits the UA-check rule entirely.
 
-    Opened up on the user's explicit, risk-acknowledged request - a
-    template that narrows/empties any of these can let its own country/
-    path/named-bot block rules catch a whitelisted IP or Googlebot, which
-    used to be structurally impossible. Applies to is_default=True too (the
-    "Mặc định" template can be edited like any other) - the ONLY guarantee
-    is_default still carries is that the row can't be deleted (see
-    routers/cf_firewall_templates.py), not that its content is safe.
+    Opened up on the user's explicit, risk-acknowledged request - a preset
+    that narrows/empties any of these can let its own country/path/named-
+    bot block rules catch a whitelisted IP or Googlebot, which used to be
+    structurally impossible when these were hardcoded. Applies to
+    is_default=True too (the "Mặc định" preset can be edited like any
+    other) - the ONLY guarantee is_default still carries is that the row
+    can't be deleted (see routers/firewall_presets.py), not that its
+    content is safe.
 
-    countries_blocked / blocked_user_agents / blocked_paths / skip_paths /
-    skip_asns / allowed_ports / allowed_ua_substrings are all stored as
-    JSON-encoded lists (json.dumps/json.loads at the router boundary, same
-    "list in a Text column" pattern as PicTeam.members) rather than a
-    separate child table - small, always-read-as-a-whole lists with no need
-    to query into individual elements.
+    countries_blocked / blocked_user_agents / blocked_paths / whitelist_ips
+    / skip_paths / skip_asns / allowed_ports / allowed_ua_substrings are
+    all stored as JSON-encoded lists (json.dumps/json.loads at the router
+    boundary, same "list in a Text column" pattern as PicTeam.members)
+    rather than a separate child table - small, always-read-as-a-whole
+    lists with no need to query into individual elements.
 
     blocked_user_agents exists because the generic non-browser-UA check
     does NOT catch SEO crawler bots like AhrefsBot - its real UA string is
@@ -280,7 +267,7 @@ class CfFirewallTemplate(Base):
     and so passes the generic allowlist-style check unchanged. Blocking a
     named bot needs its own explicit substring-block rule."""
 
-    __tablename__ = "cf_firewall_templates"
+    __tablename__ = "firewall_presets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
@@ -288,16 +275,16 @@ class CfFirewallTemplate(Base):
     blocked_user_agents: Mapped[str] = mapped_column(Text, default="[]")
     blocked_paths: Mapped[str] = mapped_column(Text, default="[]")
     bot_fight_mode: Mapped[bool] = mapped_column(default=False)
+    whitelist_ips: Mapped[str] = mapped_column(Text, default="[]")
     skip_paths: Mapped[str] = mapped_column(Text, default='["/wp-json/"]')
     skip_verified_bot: Mapped[bool] = mapped_column(default=True)
-    skip_whitelist_ip: Mapped[bool] = mapped_column(default=True)
     skip_asns: Mapped[str] = mapped_column(Text, default='["15169"]')
     allowed_ports: Mapped[str] = mapped_column(Text, default='["80", "443"]')
     allowed_ua_substrings: Mapped[str] = mapped_column(Text, default='["mozilla", "opera"]')
-    # The one template that's seeded on startup from the original hardcoded
-    # ruleset and can never be deleted (see cf_firewall_template_service) -
+    # The one preset that's seeded on startup from the original hardcoded
+    # ruleset and can never be deleted (see firewall_preset_service) -
     # always a selectable fallback name to switch back to. Its rule content
-    # can be edited like any other template, so is_default no longer
+    # can be edited like any other preset, so is_default no longer
     # guarantees the content itself is safe - only that the row always
     # exists.
     is_default: Mapped[bool] = mapped_column(default=False)

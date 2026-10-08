@@ -45,17 +45,6 @@ class SyncStatus(BaseModel):
     error_message: str | None = None
 
 
-class CfWhitelistIpOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    label: str
-    ip: str
-    is_active: bool
-    note: str
-    created_at: datetime
-
-
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -163,7 +152,7 @@ class CfAccountOut(BaseModel):
     # and never sent back to the client once saved.
 
 
-class CfFirewallTemplateOut(BaseModel):
+class FirewallPresetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -172,9 +161,9 @@ class CfFirewallTemplateOut(BaseModel):
     blocked_user_agents: list[str]
     blocked_paths: list[str]
     bot_fight_mode: bool
+    whitelist_ips: list[str]
     skip_paths: list[str]
     skip_verified_bot: bool
-    skip_whitelist_ip: bool
     skip_asns: list[str]
     allowed_ports: list[str]
     allowed_ua_substrings: list[str]
@@ -183,11 +172,11 @@ class CfFirewallTemplateOut(BaseModel):
     created_at: datetime
 
     # Several fields are JSON-encoded in a Text column on the ORM side (see
-    # models.CfFirewallTemplate) - model_validate can't decode that on its
-    # own, so routers build this via from_row() instead of calling
+    # models.FirewallPreset) - model_validate can't decode that on its own,
+    # so routers build this via from_row() instead of calling
     # model_validate(row) directly on the ORM object.
     @classmethod
-    def from_row(cls, row) -> "CfFirewallTemplateOut":
+    def from_row(cls, row) -> "FirewallPresetOut":
         return cls(
             id=row.id,
             name=row.name,
@@ -195,9 +184,9 @@ class CfFirewallTemplateOut(BaseModel):
             blocked_user_agents=json.loads(row.blocked_user_agents),
             blocked_paths=json.loads(row.blocked_paths),
             bot_fight_mode=row.bot_fight_mode,
+            whitelist_ips=json.loads(row.whitelist_ips),
             skip_paths=json.loads(row.skip_paths),
             skip_verified_bot=row.skip_verified_bot,
-            skip_whitelist_ip=row.skip_whitelist_ip,
             skip_asns=json.loads(row.skip_asns),
             allowed_ports=json.loads(row.allowed_ports),
             allowed_ua_substrings=json.loads(row.allowed_ua_substrings),

@@ -760,50 +760,50 @@ export async function triggerCfFirewallUpdate(
   mode: 'domains' | 'all_zones',
   domains: string[],
   dry_run: boolean,
-  template_id: number,
+  preset_id: number,
   options?: { [key: string]: any },
 ) {
   return request<{ job_id: number }>('/api/jobs/cf-firewall-update', {
     method: 'POST',
-    data: { mode, domains, dry_run, template_id },
+    data: { mode, domains, dry_run, preset_id },
     ...(options || {}),
   });
 }
 
-/** GET /api/cf-firewall-templates */
-export async function listCfFirewallTemplates(options?: { [key: string]: any }) {
-  return request<{ data: API.CfFirewallTemplateItem[]; success: boolean }>('/api/cf-firewall-templates', {
+/** GET /api/firewall-presets */
+export async function listFirewallPresets(options?: { [key: string]: any }) {
+  return request<{ data: API.FirewallPresetItem[]; success: boolean }>('/api/firewall-presets', {
     method: 'GET',
     ...(options || {}),
   });
 }
 
-/** POST /api/cf-firewall-templates */
-export async function createCfFirewallTemplate(
+/** POST /api/firewall-presets */
+export async function createFirewallPreset(
   body: {
     name: string;
     countries_blocked?: string[];
     blocked_user_agents?: string[];
     blocked_paths?: string[];
     bot_fight_mode?: boolean;
+    whitelist_ips?: string[];
     skip_paths?: string[];
     skip_verified_bot?: boolean;
-    skip_whitelist_ip?: boolean;
     skip_asns?: string[];
     allowed_ports?: string[];
     allowed_ua_substrings?: string[];
   },
   options?: { [key: string]: any },
 ) {
-  return request<API.CfFirewallTemplateItem>('/api/cf-firewall-templates', {
+  return request<API.FirewallPresetItem>('/api/firewall-presets', {
     method: 'POST',
     data: body,
     ...(options || {}),
   });
 }
 
-/** PUT /api/cf-firewall-templates/{id} */
-export async function updateCfFirewallTemplate(
+/** PUT /api/firewall-presets/{id} */
+export async function updateFirewallPreset(
   id: number,
   body: {
     name?: string;
@@ -811,25 +811,25 @@ export async function updateCfFirewallTemplate(
     blocked_user_agents?: string[];
     blocked_paths?: string[];
     bot_fight_mode?: boolean;
+    whitelist_ips?: string[];
     skip_paths?: string[];
     skip_verified_bot?: boolean;
-    skip_whitelist_ip?: boolean;
     skip_asns?: string[];
     allowed_ports?: string[];
     allowed_ua_substrings?: string[];
   },
   options?: { [key: string]: any },
 ) {
-  return request<API.CfFirewallTemplateItem>(`/api/cf-firewall-templates/${id}`, {
+  return request<API.FirewallPresetItem>(`/api/firewall-presets/${id}`, {
     method: 'PUT',
     data: body,
     ...(options || {}),
   });
 }
 
-/** DELETE /api/cf-firewall-templates/{id} */
-export async function deleteCfFirewallTemplate(id: number, options?: { [key: string]: any }) {
-  return request<{ success: boolean }>(`/api/cf-firewall-templates/${id}`, {
+/** DELETE /api/firewall-presets/{id} */
+export async function deleteFirewallPreset(id: number, options?: { [key: string]: any }) {
+  return request<{ success: boolean }>(`/api/firewall-presets/${id}`, {
     method: 'DELETE',
     ...(options || {}),
   });
@@ -860,51 +860,6 @@ export async function triggerCfPurgeCache(
   return request<{ job_id: number }>('/api/jobs/cf-purge-cache', {
     method: 'POST',
     data: { domains, dry_run },
-    ...(options || {}),
-  });
-}
-
-/** GET /api/cf-whitelist-ips */
-export async function listCfWhitelistIps(
-  params: { current?: number; pageSize?: number; label?: string; is_active?: boolean },
-  options?: { [key: string]: any },
-) {
-  return request<API.PagedResponse<API.CfWhitelistIpItem>>('/api/cf-whitelist-ips', {
-    method: 'GET',
-    params,
-    ...(options || {}),
-  });
-}
-
-/** POST /api/cf-whitelist-ips */
-export async function createCfWhitelistIp(
-  body: { label?: string; ip: string; note?: string },
-  options?: { [key: string]: any },
-) {
-  return request<API.CfWhitelistIpItem>('/api/cf-whitelist-ips', {
-    method: 'POST',
-    data: body,
-    ...(options || {}),
-  });
-}
-
-/** PUT /api/cf-whitelist-ips/{id} */
-export async function updateCfWhitelistIp(
-  id: number,
-  body: { label?: string; ip?: string; note?: string; is_active?: boolean },
-  options?: { [key: string]: any },
-) {
-  return request<API.CfWhitelistIpItem>(`/api/cf-whitelist-ips/${id}`, {
-    method: 'PUT',
-    data: body,
-    ...(options || {}),
-  });
-}
-
-/** DELETE /api/cf-whitelist-ips/{id} */
-export async function deleteCfWhitelistIp(id: number, options?: { [key: string]: any }) {
-  return request<{ success: boolean }>(`/api/cf-whitelist-ips/${id}`, {
-    method: 'DELETE',
     ...(options || {}),
   });
 }

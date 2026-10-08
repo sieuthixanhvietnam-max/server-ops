@@ -375,32 +375,23 @@ declare namespace API {
     count: number;
   };
 
-  type CfWhitelistIpItem = {
-    id: number;
-    label: string;
-    ip: string;
-    is_active: boolean;
-    note: string;
-    created_at: string;
-  };
-
   type CfFirewallUpdateResult = {
     domain: string;
     status: 'ok' | 'error' | 'DRYRUN';
     note: string;
-    template: string;
+    preset: string;
   };
 
-  type CfFirewallTemplateItem = {
+  type FirewallPresetItem = {
     id: number;
     name: string;
     countries_blocked: string[];
     blocked_user_agents: string[];
     blocked_paths: string[];
     bot_fight_mode: boolean;
+    whitelist_ips: string[];
     skip_paths: string[];
     skip_verified_bot: boolean;
-    skip_whitelist_ip: boolean;
     skip_asns: string[];
     allowed_ports: string[];
     allowed_ua_substrings: string[];

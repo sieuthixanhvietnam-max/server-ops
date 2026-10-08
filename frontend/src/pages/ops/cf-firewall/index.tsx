@@ -1,11 +1,11 @@
 import ClearCacheButton from '@/components/ClearCacheButton';
 import DangerPopconfirm from '@/components/DangerPopconfirm';
-import FirewallTemplateSummary from '@/components/FirewallTemplateSummary';
+import FirewallPresetSummary from '@/components/FirewallPresetSummary';
 import JobLogPanel from '@/components/JobLogPanel';
 import JobResultActions from '@/components/JobResultActions';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import { clearPersistedState, usePersistedState } from '@/hooks/usePersistedState';
-import { listCfFirewallTemplates, triggerCfFirewallUpdate } from '@/services/serverOps/api';
+import { listFirewallPresets, triggerCfFirewallUpdate } from '@/services/serverOps/api';
 import { DEFAULT_PAGINATION } from '@/utils/pagination';
 import {
   CheckCircleFilled,
@@ -57,8 +57,8 @@ const parseDomains = (text: string) =>
 const ALL_ZONES_LABEL = 'TOÀN BỘ ZONE TRONG ACCOUNT (quét lúc chạy job, có thể tới hàng chục nghìn zone)';
 
 /** A section Card with a numbered step badge in its title - the 3 sections
- * of this page always run in the same order (scope -> template -> apply),
- * so the number reinforces that without needing a heavier Steps widget. */
+ * of this page always run in the same order (scope -> preset -> apply), so
+ * the number reinforces that without needing a heavier Steps widget. */
 const StepCard: React.FC<{
   step: number;
   icon: React.ReactNode;
@@ -105,36 +105,35 @@ const CfFirewall: React.FC = () => {
   const [running, setRunning] = useState(false);
   const job = useJobPolling(jobId);
 
-  const [templates, setTemplates] = useState<API.CfFirewallTemplateItem[]>([]);
-  const [templateId, setTemplateId] = usePersistedState<number | undefined>('cf-firewall:templateId', undefined);
+  const [presets, setPresets] = useState<API.FirewallPresetItem[]>([]);
+  const [presetId, setPresetId] = usePersistedState<number | undefined>('cf-firewall:presetId', undefined);
 
   useEffect(() => {
-    listCfFirewallTemplates().then((res) => {
+    listFirewallPresets().then((res) => {
       const data = res.data || [];
-      setTemplates(data);
-      // Lần đầu chưa chọn gì (hoặc template đã chọn trước đó bị xoá) - về
-      // template mặc định cho an toàn, không để trống.
-      if (!data.some((t) => t.id === templateId)) {
-        setTemplateId(data.find((t) => t.is_default)?.id ?? data[0]?.id);
+      setPresets(data);
+      // Lần đầu chưa chọn gì (hoặc preset đã chọn trước đó bị xoá) - về
+      // preset mặc định cho an toàn, không để trống.
+      if (!data.some((p) => p.id === presetId)) {
+        setPresetId(data.find((p) => p.is_default)?.id ?? data[0]?.id);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedTemplate = templates.find((t) => t.id === templateId);
+  const selectedPreset = presets.find((p) => p.id === presetId);
   const baseRulesDisabled =
-    !!selectedTemplate &&
-    (!selectedTemplate.skip_whitelist_ip ||
-      !selectedTemplate.skip_verified_bot ||
-      selectedTemplate.allowed_ports.length === 0 ||
-      selectedTemplate.allowed_ua_substrings.length === 0 ||
-      (selectedTemplate.skip_paths.length === 0 &&
-        selectedTemplate.skip_asns.length === 0 &&
-        !selectedTemplate.skip_whitelist_ip &&
-        !selectedTemplate.skip_verified_bot));
+    !!selectedPreset &&
+    (!selectedPreset.skip_verified_bot ||
+      selectedPreset.allowed_ports.length === 0 ||
+      selectedPreset.allowed_ua_substrings.length === 0 ||
+      (selectedPreset.whitelist_ips.length === 0 &&
+        selectedPreset.skip_paths.length === 0 &&
+        selectedPreset.skip_asns.length === 0 &&
+        !selectedPreset.skip_verified_bot));
   const domains = parseDomains(text);
   const isBusy = running || job?.status === 'running' || job?.status === 'pending';
-  const canRun = (mode === 'all_zones' || domains.length > 0) && !!templateId;
+  const canRun = (mode === 'all_zones' || domains.length > 0) && !!presetId;
 
   const results = (job?.result as API.CfFirewallUpdateResult[]) || [];
   const statusCounts = results.reduce<Record<string, number>>((acc, r) => {
@@ -152,13 +151,13 @@ const CfFirewall: React.FC = () => {
       message.warning('Nhập ít nhất 1 domain (mỗi dòng 1 domain)');
       return;
     }
-    if (!templateId) {
-      message.warning('Chọn 1 template Firewall trước');
+    if (!presetId) {
+      message.warning('Chọn 1 Firewall Preset trước');
       return;
     }
     setRunning(true);
     try {
-      const res = await triggerCfFirewallUpdate(mode, mode === 'domains' ? domains : [], dryRun, templateId);
+      const res = await triggerCfFirewallUpdate(mode, mode === 'domains' ? domains : [], dryRun, presetId);
       setJobId(res.job_id);
       if (!dryRun && mode === 'domains') {
         setText('');
@@ -184,8 +183,8 @@ const CfFirewall: React.FC = () => {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="Chọn phạm vi domain, chọn Template rồi áp dụng Firewall."
-        description="Whitelist IP lấy từ trang 'Whitelist IP (Firewall)' tại thời điểm chạy - sửa xong quay lại đây chạy lại để áp dụng, việc sửa không tự động áp lên zone đang có."
+        message="Chọn phạm vi domain, chọn Firewall Preset rồi áp dụng."
+        description="Mỗi preset tự mang theo danh sách IP whitelist riêng - sửa ở trang 'Firewall Preset' xong quay lại đây chạy lại để áp dụng, việc sửa không tự động áp lên zone đang có."
       />
 
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -221,21 +220,21 @@ const CfFirewall: React.FC = () => {
         <StepCard
           step={2}
           icon={<SafetyCertificateOutlined />}
-          title="Template Firewall"
+          title="Firewall Preset"
           extra={
-            <Button size="small" type="link" icon={<SettingOutlined />} onClick={() => navigate('/data/cf-firewall-templates')}>
-              Quản lý template
+            <Button size="small" type="link" icon={<SettingOutlined />} onClick={() => navigate('/data/firewall-presets')}>
+              Quản lý preset
             </Button>
           }
         >
           <Select
             style={{ minWidth: 320 }}
-            value={templateId}
-            onChange={setTemplateId}
-            options={templates.map((t) => ({ value: t.id, label: t.is_default ? `${t.name} (mặc định)` : t.name }))}
-            placeholder="Chọn template..."
+            value={presetId}
+            onChange={setPresetId}
+            options={presets.map((p) => ({ value: p.id, label: p.is_default ? `${p.name} (mặc định)` : p.name }))}
+            placeholder="Chọn preset..."
           />
-          {selectedTemplate && (
+          {selectedPreset && (
             <div
               style={{
                 marginTop: 12,
@@ -246,7 +245,7 @@ const CfFirewall: React.FC = () => {
                 borderLeft: `4px solid ${baseRulesDisabled ? '#ff4d4f' : '#52c41a'}`,
               }}
             >
-              <FirewallTemplateSummary tpl={selectedTemplate} />
+              <FirewallPresetSummary preset={selectedPreset} />
             </div>
           )}
         </StepCard>
@@ -262,13 +261,13 @@ const CfFirewall: React.FC = () => {
               onConfirm={() => run(false)}
               loading={running}
               extra={
-                selectedTemplate && (
+                selectedPreset && (
                   <div>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      Template "{selectedTemplate.name}" sẽ áp dụng:
+                      Preset "{selectedPreset.name}" sẽ áp dụng:
                     </Typography.Text>
                     <div style={{ marginTop: 4 }}>
-                      <FirewallTemplateSummary tpl={selectedTemplate} />
+                      <FirewallPresetSummary preset={selectedPreset} />
                     </div>
                     {baseRulesDisabled && (
                       <Alert
@@ -276,16 +275,16 @@ const CfFirewall: React.FC = () => {
                         showIcon
                         icon={<WarningFilled />}
                         style={{ marginTop: 8 }}
-                        message="Template này đã TẮT ít nhất 1 trong 3 rule nền (xem tag màu đỏ phía trên) - rule chặn quốc gia/bot/path có thể tự chặn nhầm IP whitelist hoặc Googlebot. Kiểm tra lại kỹ trước khi tiếp tục."
+                        message="Preset này đã TẮT ít nhất 1 rule nền (xem tag màu đỏ phía trên) - rule chặn quốc gia/bot/path có thể tự chặn nhầm IP whitelist hoặc Googlebot. Kiểm tra lại kỹ trước khi tiếp tục."
                       />
                     )}
-                    {mode === 'all_zones' && !selectedTemplate.is_default && (
+                    {mode === 'all_zones' && !selectedPreset.is_default && (
                       <Alert
                         type="error"
                         showIcon
                         icon={<WarningFilled />}
                         style={{ marginTop: 8 }}
-                        message="Đang áp template TUỲ CHỈNH cho TOÀN BỘ zone trong account - kiểm tra lại nội dung template phía trên trước khi tiếp tục."
+                        message="Đang áp preset TUỲ CHỈNH cho TOÀN BỘ zone trong account - kiểm tra lại nội dung preset phía trên trước khi tiếp tục."
                       />
                     )}
                   </div>
@@ -319,8 +318,8 @@ const CfFirewall: React.FC = () => {
                 ))}
               </Row>
               <JobResultActions
-                headers={['Domain', 'Template', 'Trạng thái', 'Ghi chú']}
-                rows={results.map((r) => [r.domain, r.template || '', STATUS_LABELS[r.status] || r.status, r.note || ''])}
+                headers={['Domain', 'Preset', 'Trạng thái', 'Ghi chú']}
+                rows={results.map((r) => [r.domain, r.preset || '', STATUS_LABELS[r.status] || r.status, r.note || ''])}
                 filename="cf-firewall-update-result.csv"
                 countLabel={`${results.length} dòng kết quả`}
               />
@@ -332,7 +331,7 @@ const CfFirewall: React.FC = () => {
                 pagination={DEFAULT_PAGINATION}
                 columns={[
                   { title: 'Domain', dataIndex: 'domain' },
-                  { title: 'Template', dataIndex: 'template' },
+                  { title: 'Preset', dataIndex: 'preset' },
                   {
                     title: 'Trạng thái',
                     dataIndex: 'status',

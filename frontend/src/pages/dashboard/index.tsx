@@ -88,7 +88,7 @@ const QUICK_LINK_GROUPS: {
       { label: 'PIC', path: '/data/pics', icon: <TeamOutlined /> },
       { label: 'CF Accounts', path: '/data/cf-accounts', icon: <IdcardOutlined /> },
       { label: 'CF Domains', path: '/data/cf-domains', icon: <CloudOutlined /> },
-      { label: 'IP Whitelist', path: '/data/cf-whitelist', icon: <SafetyCertificateOutlined /> },
+      { label: 'Firewall Preset', path: '/data/firewall-presets', icon: <SafetyCertificateOutlined /> },
     ],
   },
   {
