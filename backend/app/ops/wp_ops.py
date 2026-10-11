@@ -15,6 +15,7 @@ CLONE_SCRIPT = """#!/bin/bash
 set -o pipefail
 SOURCE="$1"
 TARGET="$2"
+RESET_ADMIN="$3"
 LOG="/tmp/clone-$TARGET.log"
 
 echo "[step] Checking source..."
@@ -57,7 +58,29 @@ else
 fi
 
 echo "[step] Starting clone $SOURCE -> $TARGET..."
-nohup bash /etc/wptt/wptt-sao-chep-website "$SOURCE" "$TARGET" >> "$LOG" 2>&1 &
+# RESET_ADMIN=1 only for create-wpsite (brand-new site from a shared
+# template - every template's lone admin user is literally named
+# "adtoptop", so every new site would otherwise inherit that exact login).
+# Plain { ...; } group (not a nested `bash -c '...'` string) backgrounded as
+# a whole - the rename runs only after wptt-sao-chep-website actually
+# finishes (sequential inside the group), not gated on the separate (and
+# occasionally premature) 90s HTTP verify poll. A nested single-quoted
+# sub-script would also have broken the moment its own body needed a literal
+# single quote (wp-config.php's TABLE_PREFIX grep, below) - bash gives
+# single quotes no escaping or nesting at all.
+{
+    bash /etc/wptt/wptt-sao-chep-website "$SOURCE" "$TARGET"
+    if [[ "$RESET_ADMIN" == "1" ]]; then
+        NEW_LOGIN="admin_$(echo "$TARGET" | tr -d ".-")"
+        WP_PATH="/usr/local/lsws/$TARGET/html"
+        TABLE_PREFIX=$(grep -E '^\\$table_prefix\\s*=' "$WP_PATH/wp-config.php" 2>/dev/null \
+            | sed "s/.*'\\([^']*\\)'.*/\\1/" | head -1)
+        [[ -z "$TABLE_PREFIX" ]] && TABLE_PREFIX="wp_"
+        echo "[step] Doi admin username -> $NEW_LOGIN"
+        /usr/local/bin/wp db query "UPDATE ${TABLE_PREFIX}users SET user_login='$NEW_LOGIN', user_nicename='$NEW_LOGIN' WHERE user_login='adtoptop';" --allow-root --path="$WP_PATH"
+        echo "[ ok] admin username updated"
+    fi
+} >> "$LOG" 2>&1 &
 PID=$!
 echo "[ ok] clone dispatched  PID $PID  log: $LOG"
 echo "PID $PID"
@@ -188,8 +211,13 @@ def _clone_concurrency(profile: str) -> int:
     return _DEFAULT_CLONE_CONCURRENCY
 
 
-def clone_wpsite(entries: list[dict], log, dry_run: bool = False) -> list[dict]:
+def clone_wpsite(entries: list[dict], log, dry_run: bool = False, reset_admin_username: bool = False) -> list[dict]:
     """entries: [{"profile", "ip", "source", "target"}]
+
+    reset_admin_username: create-wpsite passes True (brand-new site cloned
+    from the shared template, whose only admin user is "adtoptop" - see
+    CLONE_SCRIPT). clone-wpsite leaves it False - a clone of a real site
+    should keep that site's real admin accounts untouched.
 
     Per target server: dispatch+verify in small chunks (see
     _clone_concurrency) so no more than a few clones are ever copying in the
@@ -235,7 +263,8 @@ def clone_wpsite(entries: list[dict], log, dry_run: bool = False) -> list[dict]:
                 # does more work than the old hand-rolled cleanup (chroot
                 # unmount, OLS namespace teardown, certbot revoke over the
                 # network), so the old 60s margin got tighter, not looser.
-                ip, user, key, CLONE_SCRIPT, args=[source, target], use_sudo=True, timeout=180
+                ip, user, key, CLONE_SCRIPT,
+                args=[source, target, "1" if reset_admin_username else "0"], use_sudo=True, timeout=180
             )
             for line in output.splitlines():
                 log(f"    {line}")

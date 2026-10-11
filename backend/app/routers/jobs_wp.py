@@ -239,10 +239,13 @@ async def trigger_create_wpsite(
     """Fan-out variant of clone-wpsite: 1 fixed template source cloned onto
     N brand-new target domains, all on the same server (source_server -
     always required here, since a reusable template is deployed identically
-    on every box and there's no other signal to pick one). Mechanically
-    identical to clone-wpsite (same wp_ops.clone_wpsite call) - kept as a
-    separate endpoint/job_type only so Job History can distinguish "created
-    new site" from "cloned/overwrote existing site"."""
+    on every box and there's no other signal to pick one). Same
+    wp_ops.clone_wpsite call as clone-wpsite, except reset_admin_username=True
+    (every template's lone admin user is "adtoptop" - a real clone of an
+    existing site must never touch its real admin accounts, but a brand-new
+    site from the template always should) - also kept as a separate
+    endpoint/job_type so Job History can distinguish "created new site" from
+    "cloned/overwrote existing site"."""
     if not body.targets:
         raise HTTPException(status_code=400, detail="targets list is empty")
     if not body.source_server.strip():
@@ -266,7 +269,7 @@ async def trigger_create_wpsite(
     async def worker(ctx):
         for e in errors:
             ctx.log(f"[skip] {e}")
-        return await asyncio.to_thread(wp_ops.clone_wpsite, entries, ctx.log, body.dry_run)
+        return await asyncio.to_thread(wp_ops.clone_wpsite, entries, ctx.log, body.dry_run, True)
 
     launch_job(job.id, worker)
     return {"job_id": job.id}
