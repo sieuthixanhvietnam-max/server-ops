@@ -1,3 +1,4 @@
+import secrets
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -16,6 +17,7 @@ set -o pipefail
 SOURCE="$1"
 TARGET="$2"
 RESET_ADMIN="$3"
+NEW_ADMIN_PASSWORD="$4"
 LOG="/tmp/clone-$TARGET.log"
 
 echo "[step] Checking source..."
@@ -72,13 +74,20 @@ echo "[step] Starting clone $SOURCE -> $TARGET..."
     bash /etc/wptt/wptt-sao-chep-website "$SOURCE" "$TARGET"
     if [[ "$RESET_ADMIN" == "1" ]]; then
         NEW_LOGIN="admin_$(echo "$TARGET" | tr -d ".-")"
+        NEW_EMAIL="admin@$TARGET"
         WP_PATH="/usr/local/lsws/$TARGET/html"
         TABLE_PREFIX=$(grep -E '^\\$table_prefix\\s*=' "$WP_PATH/wp-config.php" 2>/dev/null \
             | sed "s/.*'\\([^']*\\)'.*/\\1/" | head -1)
         [[ -z "$TABLE_PREFIX" ]] && TABLE_PREFIX="wp_"
-        echo "[step] Doi admin username -> $NEW_LOGIN"
-        /usr/local/bin/wp db query "UPDATE ${TABLE_PREFIX}users SET user_login='$NEW_LOGIN', user_nicename='$NEW_LOGIN' WHERE user_login='adtoptop';" --allow-root --path="$WP_PATH"
-        echo "[ ok] admin username updated"
+        echo "[step] Doi thong tin admin -> $NEW_LOGIN / $NEW_EMAIL"
+        # nickname (wp_usermeta) must be updated BEFORE the wp_users rename below -
+        # it looks up the user by the OLD login "adtoptop", which stops matching
+        # anything the moment the rename below runs.
+        /usr/local/bin/wp db query "UPDATE ${TABLE_PREFIX}usermeta SET meta_value='$NEW_LOGIN' WHERE meta_key='nickname' AND user_id=(SELECT ID FROM ${TABLE_PREFIX}users WHERE user_login='adtoptop');" --allow-root --path="$WP_PATH"
+        /usr/local/bin/wp db query "UPDATE ${TABLE_PREFIX}users SET user_login='$NEW_LOGIN', user_nicename='$NEW_LOGIN', display_name='$NEW_LOGIN', user_email='$NEW_EMAIL' WHERE user_login='adtoptop';" --allow-root --path="$WP_PATH"
+        # user_pass needs WordPress's own hashing (wp-cli), not a raw SQL UPDATE.
+        /usr/local/bin/wp user update "$NEW_LOGIN" --user_pass="$NEW_ADMIN_PASSWORD" --allow-root --path="$WP_PATH"
+        echo "[ ok] admin info updated"
     fi
 } >> "$LOG" 2>&1 &
 PID=$!
@@ -216,8 +225,11 @@ def clone_wpsite(entries: list[dict], log, dry_run: bool = False, reset_admin_us
 
     reset_admin_username: create-wpsite passes True (brand-new site cloned
     from the shared template, whose only admin user is "adtoptop" - see
-    CLONE_SCRIPT). clone-wpsite leaves it False - a clone of a real site
-    should keep that site's real admin accounts untouched.
+    CLONE_SCRIPT). Also resets display_name/nickname/email to match
+    (admin_<domain> / admin@<domain>) and sets a fresh random password -
+    every new site otherwise shares the template's literal credentials,
+    not just its username. clone-wpsite leaves it False - a clone of a
+    real site should keep that site's real admin accounts untouched.
 
     Per target server: dispatch+verify in small chunks (see
     _clone_concurrency) so no more than a few clones are ever copying in the
@@ -257,6 +269,18 @@ def clone_wpsite(entries: list[dict], log, dry_run: bool = False, reset_admin_us
                                   "status": "FAIL", "note": err}
                 return None
 
+            # Computed here (not read back from the server) because the
+            # rename/password-set happens in a backgrounded shell on the
+            # server - there's nothing to read back from yet by the time
+            # this SSH call returns. new_login/new_email are deterministic
+            # from target alone; new_password must originate here too, since
+            # CLONE_SCRIPT needs it as an argument to actually set it.
+            new_login = new_email = new_password = None
+            if reset_admin_username:
+                new_login = "admin_" + target.replace(".", "").replace("-", "")
+                new_email = f"admin@{target}"
+                new_password = secrets.token_urlsafe(12)
+
             rc, output = ssh_ops.run_remote(
                 # 180s (was 60s): wptt-xoa-website's removal path now runs
                 # inside this call when overwriting an existing target - it
@@ -264,7 +288,8 @@ def clone_wpsite(entries: list[dict], log, dry_run: bool = False, reset_admin_us
                 # unmount, OLS namespace teardown, certbot revoke over the
                 # network), so the old 60s margin got tighter, not looser.
                 ip, user, key, CLONE_SCRIPT,
-                args=[source, target, "1" if reset_admin_username else "0"], use_sudo=True, timeout=180
+                args=[source, target, "1" if reset_admin_username else "0", new_password or ""],
+                use_sudo=True, timeout=180
             )
             for line in output.splitlines():
                 log(f"    {line}")
@@ -280,6 +305,7 @@ def clone_wpsite(entries: list[dict], log, dry_run: bool = False, reset_admin_us
                     "idx": idx, "source": source, "target": target, "ip": ip,
                     "user": user, "key": key, "note": note,
                     "dns_status": dns_status, "dns_note": dns_note,
+                    "new_login": new_login, "new_email": new_email, "new_password": new_password,
                 }
             elif rc == 11:
                 log(f"[fail] {label}: target is primary website, refused")
@@ -357,6 +383,8 @@ def clone_wpsite(entries: list[dict], log, dry_run: bool = False, reset_admin_us
                 "status": "OK", "note": p["note"],
                 "dns_status": p["dns_status"], "dns_note": p["dns_note"],
                 "verify": verify,
+                "new_login": p.get("new_login"), "new_email": p.get("new_email"),
+                "new_password": p.get("new_password"),
             }
 
     def _run_server_group(group: list[tuple[int, dict]]) -> None:

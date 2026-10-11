@@ -253,6 +253,10 @@ declare namespace API {
     dns_status?: 'updated' | 'unchanged' | 'error';
     dns_note?: string;
     verify?: VerifyInfo;
+    /** Only set for create-wpsite (reset_admin_username=true) - clone-wpsite leaves these undefined. */
+    new_login?: string;
+    new_email?: string;
+    new_password?: string;
   };
 
   type RemoveWpsiteResult = {

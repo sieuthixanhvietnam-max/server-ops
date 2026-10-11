@@ -632,12 +632,15 @@ const CreateWpsite: React.FC = () => {
         {(job?.status === 'success' || job?.status === 'failed') && (
           <>
           <JobResultActions
-            headers={['Source', 'Target', 'Server IP', 'Trạng thái', 'DNS (Cloudflare)', 'Xác minh', 'Ghi chú']}
+            headers={['Source', 'Target', 'Server IP', 'Trạng thái', 'DNS (Cloudflare)', 'Xác minh', 'Username', 'Email', 'Password', 'Ghi chú']}
             rows={(job.result as API.CloneWpsiteResult[]).map((r) => [
               r.source, r.target, r.ip,
               CREATE_STATUS_LABELS[r.status] || r.status,
               r.dns_status ? (DNS_STATUS_LABELS[r.dns_status] || r.dns_status) : '-',
               verifyToText(r.verify),
+              r.new_login || '',
+              r.new_email || '',
+              r.new_password || '',
               r.note || '',
             ])}
             filename="create-wpsite-result.csv"
@@ -647,6 +650,7 @@ const CreateWpsite: React.FC = () => {
             rowKey="target"
             dataSource={job.result}
             pagination={false}
+            scroll={{ x: true }}
             columns={[
               { title: 'Source', dataIndex: 'source' },
               { title: 'Target', dataIndex: 'target' },
@@ -676,6 +680,13 @@ const CreateWpsite: React.FC = () => {
                 title: 'Xác minh',
                 dataIndex: 'verify',
                 render: (v: API.VerifyInfo | undefined) => <VerifyBadge verify={v} />,
+              },
+              { title: 'Username', dataIndex: 'new_login', render: (v?: string) => v || '-' },
+              { title: 'Email', dataIndex: 'new_email', render: (v?: string) => v || '-' },
+              {
+                title: 'Password',
+                dataIndex: 'new_password',
+                render: (v?: string) => (v ? <Typography.Text copyable>{v}</Typography.Text> : '-'),
               },
               { title: 'Ghi chú', dataIndex: 'note' },
             ]}
