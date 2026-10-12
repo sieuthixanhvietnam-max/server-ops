@@ -88,10 +88,17 @@ def preset_to_params(row: FirewallPreset) -> dict:
 def get_default_preset_params(db: Session) -> dict:
     """Used by flows with no preset picker of their own (currently:
     add_domains, when first creating a brand-new zone) - always resolves to
-    the "Mặc định" preset's current values, never a stale hardcoded copy."""
+    the "Mặc định" preset's current values, never a stale hardcoded copy.
+    Uses first() rather than scalar_one_or_none(): is_default has no DB-level
+    uniqueness constraint, and a stale duplicate (e.g. a prior
+    DEFAULT_PRESET_NAME rename making seed_firewall_presets insert a second
+    row before its own name-vs-is_default check was fixed) must not crash
+    every caller - it just means "pick the newest one deterministically",
+    since the seed always writes current-code values, so the most recently
+    created default row is the one that actually matches today's code."""
     row = db.execute(
-        select(FirewallPreset).where(FirewallPreset.is_default.is_(True))
-    ).scalar_one_or_none()
+        select(FirewallPreset).where(FirewallPreset.is_default.is_(True)).order_by(FirewallPreset.id.desc())
+    ).scalars().first()
     if not row:
         return {
             "name": DEFAULT_PRESET_NAME, "countries_blocked": [], "blocked_user_agents": [],
@@ -103,9 +110,14 @@ def get_default_preset_params(db: Session) -> dict:
 
 
 def seed_firewall_presets(db: Session) -> None:
+    """Checks by is_default, not by name == DEFAULT_PRESET_NAME: a name-based
+    check means any future rename/retyping of DEFAULT_PRESET_NAME (it has
+    already drifted once between "Mặc Định" and "Mặc định") makes this
+    insert a second is_default=True row instead of recognizing the existing
+    one, which breaks every caller of get_default_preset_params."""
     existing = db.execute(
-        select(FirewallPreset).where(FirewallPreset.name == DEFAULT_PRESET_NAME)
-    ).scalar_one_or_none()
+        select(FirewallPreset).where(FirewallPreset.is_default.is_(True))
+    ).scalars().first()
     if existing:
         return
     db.add(FirewallPreset(
