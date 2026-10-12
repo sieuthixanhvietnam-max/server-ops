@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -152,6 +152,22 @@ class CfZone(Base):
     nameservers: Mapped[str] = mapped_column(Text, default="[]")
     created_on: Mapped[str] = mapped_column(String, default="")
     last_synced_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class CfBotFightState(Base):
+    """Caches the bot_fight_mode value this app last successfully PUT to a
+    zone's Cloudflare bot_management endpoint - lets set_bot_fight_mode skip
+    that API call when re-applying a preset whose value already matches,
+    cutting Cloudflare API usage roughly in half on repeat full-fleet
+    firewall runs. Deliberately its own table, NOT a column on CfZone:
+    CfZone is wiped and reinserted wholesale on every per-account sync (see
+    its docstring), which would silently erase this cache on every sync."""
+
+    __tablename__ = "cf_bot_fight_state"
+
+    zone_id: Mapped[str] = mapped_column(String, primary_key=True)
+    bot_fight_mode: Mapped[bool] = mapped_column(Boolean)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 
 class Pic(Base):

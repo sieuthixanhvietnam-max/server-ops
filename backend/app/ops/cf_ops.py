@@ -2,11 +2,14 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 import dns.resolver
 import requests
 
 from app.config import settings
+from app.database import SessionLocal
+from app.models import CfBotFightState
 from app.ops import index_ops, verify_ops
 
 CF_BASE = "https://api.cloudflare.com/client/v4/zones"
@@ -407,11 +410,36 @@ class CFClient:
         currently off for the zone ("cannot enable Fight_Mode while
         EnableJS is disabled", confirmed live). enable_js has no other
         role anywhere in this app, so it's simplest to just tie it 1:1 to
-        the same enabled flag rather than read-then-conditionally-patch."""
-        r = self._put(f"{CF_BASE}/{zone_id}/bot_management", json={"fight_mode": enabled, "enable_js": enabled})
-        if r.get("success"):
+        the same enabled flag rather than read-then-conditionally-patch.
+
+        Skips the API call entirely when CfBotFightState already records
+        `enabled` as the value this app last successfully set for this zone
+        - repeat full-fleet firewall runs stop paying for this call on every
+        zone that hasn't changed, roughly halving their total Cloudflare API
+        usage. The cache only ever reflects what THIS APP set, never a
+        live read of Cloudflare's side, so it can drift if someone toggles
+        Bot Fight Mode by hand in the Cloudflare dashboard - accepted
+        tradeoff, since this app is the only place this org manages
+        firewall/bot settings (confirmed with the user 2026-10-12)."""
+        db = SessionLocal()
+        try:
+            cached = db.get(CfBotFightState, zone_id)
+            if cached is not None and cached.bot_fight_mode == enabled:
+                return True, f"Bot Fight Mode {'on' if enabled else 'off'} (đã đúng từ trước, bỏ qua API call)"
+
+            r = self._put(f"{CF_BASE}/{zone_id}/bot_management", json={"fight_mode": enabled, "enable_js": enabled})
+            if not r.get("success"):
+                return False, self._err_msg(r)
+
+            if cached is None:
+                db.add(CfBotFightState(zone_id=zone_id, bot_fight_mode=enabled, updated_at=datetime.now(timezone.utc)))
+            else:
+                cached.bot_fight_mode = enabled
+                cached.updated_at = datetime.now(timezone.utc)
+            db.commit()
             return True, f"Bot Fight Mode {'on' if enabled else 'off'}"
-        return False, self._err_msg(r)
+        finally:
+            db.close()
 
     def set_firewall_rules_result(self, zone_id: str, preset: dict) -> tuple[bool, str]:
         """Same PUT as set_firewall_rules but returns (ok, msg) instead of
