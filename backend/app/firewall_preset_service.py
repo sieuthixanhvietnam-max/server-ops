@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session
 from app.models import FirewallPreset
 
 DEFAULT_PRESET_NAME = "Mặc định"
-_DEFAULT_COUNTRIES = ["PH", "AE", "US", "AG", "MT", "CW", "GB", "DE", "CR", "CA", "SG", "FR"]
+# "Mặc định" blocks no country by policy (confirmed with the user 2026-10-12,
+# after a duplicate-default bug briefly made a 12-country-blocking row look
+# like the real default) - any country blocking belongs on a dedicated
+# preset (e.g. "Net88"), never the fallback every new domain gets.
+_DEFAULT_COUNTRIES: list[str] = []
 _DEFAULT_PATHS = ["xmlrpc.php"]
 _DEFAULT_SKIP_PATHS = ["/wp-json/"]
 _DEFAULT_SKIP_ASNS = ["15169"]  # Google
