@@ -15,6 +15,40 @@ REQUEST_TIMEOUT = 15
 MAX_RETRY = 3
 RETRY_BACKOFF = 1.0
 
+# Cloudflare's real limit for this token (read live from a response: header
+# `Ratelimit-Policy: "default";q=1200;w=300` - 1200 requests / 300s = 4/s
+# sustained) is per API TOKEN, shared across every job/user hitting it at
+# once - not per CFClient instance, per job, or per user. 10 parallel
+# workers x 2 PUT calls/domain in the all_zones firewall bulk job blew past
+# this badly (649 fails in one run, all surfaced as a useless "None"
+# message - see _request). Two independent interval limiters (not one
+# shared queue) split that 4/s budget by priority so a bulk full-fleet scan
+# can never starve a quick interactive action (redirect/add/single-domain
+# firewall) that happens to run at the same time - "high" keeps most of the
+# budget, "low" gets a small fixed share, and together they stay under the
+# real cap with some margin. Keyed by token (module-level, not per-instance)
+# since the backend is a single process (no --workers) and the quota is
+# Cloudflare's, not ours - every CFClient sharing a token must throttle
+# against the same clock.
+_RATE_LIMIT_INTERVAL = {"high": 1 / 3.0, "low": 1 / 1.0}
+_rate_limiter_guard = threading.Lock()
+_rate_limiter_locks: dict[tuple[str, str], threading.Lock] = {}
+_rate_limiter_last_ts: dict[tuple[str, str], float] = {}
+
+
+def _throttle(token: str, priority: str) -> None:
+    key = (token, priority)
+    with _rate_limiter_guard:
+        lock = _rate_limiter_locks.setdefault(key, threading.Lock())
+    interval = _RATE_LIMIT_INTERVAL.get(priority, _RATE_LIMIT_INTERVAL["high"])
+    with lock:
+        now = time.monotonic()
+        wait = (_rate_limiter_last_ts.get(key, 0.0) + interval) - now
+        if wait > 0:
+            time.sleep(wait)
+            now = time.monotonic()
+        _rate_limiter_last_ts[key] = now
+
 # The exact shape sync_redirects ever writes (see _normalize_domain there):
 # one literal hostname, no leading wildcard, single trailing "/*". Anything
 # else on a live zone is either hand-edited or a leftover from before this
@@ -22,7 +56,7 @@ RETRY_BACKOFF = 1.0
 _REDIRECT_PATTERN_RE = re.compile(r"^[a-z0-9.-]+/\*$")
 
 class CFClient:
-    def __init__(self, api_token: str | None = None):
+    def __init__(self, api_token: str | None = None, priority: str = "high"):
         # Instance-level (not class-level) cache/lock: different CFClient
         # instances can be scoped to different Cloudflare accounts, and a
         # token from account A cannot see account B's zones. A shared
@@ -31,28 +65,49 @@ class CFClient:
         # client looking up the same domain name.
         self._zone_cache = {}
         self._cache_lock = threading.Lock()
+        self._api_token = api_token or settings.cf_api_token
+        # "low" = this instance only ever drives a full-fleet bulk scan
+        # (every caller that hands items to _parallel_batched passes this) -
+        # see _RATE_LIMIT_INTERVAL above for why it matters that this is set
+        # at construction time, not guessed from call volume later.
+        self._priority = priority
         self._session = requests.Session()
         self._session.headers.update(
             {
-                "Authorization": f"Bearer {api_token or settings.cf_api_token}",
+                "Authorization": f"Bearer {self._api_token}",
                 "Content-Type": "application/json",
             }
         )
 
     def _request(self, method, url, **kw):
         kw.setdefault("timeout", REQUEST_TIMEOUT)
+        _throttle(self._api_token, self._priority)
         last_exc = None
+        last_status = None
         for attempt in range(MAX_RETRY):
             try:
                 resp = self._session.request(method, url, **kw)
                 if resp.status_code == 429 or resp.status_code >= 500:
+                    last_status = resp.status_code
                     time.sleep(RETRY_BACKOFF * (2**attempt))
                     continue
                 return resp.json()
             except (requests.ConnectionError, requests.Timeout) as exc:
                 last_exc = exc
                 time.sleep(RETRY_BACKOFF * (2**attempt))
-        return {"success": False, "errors": [{"message": str(last_exc)}]}
+        # Bug fixed 2026-10-12: this used to always read str(last_exc), which
+        # is still None (never set) on the status-code branch above - every
+        # exhausted-retries failure showed a useless "None" message instead
+        # of the real reason (confirmed live: 649 fails in one all_zones run,
+        # all either "429 rate limited" or a transient 5xx, all reported as
+        # literally "None").
+        if last_exc is not None:
+            reason = str(last_exc)
+        elif last_status is not None:
+            reason = f"HTTP {last_status} sau {MAX_RETRY} lần thử lại"
+        else:
+            reason = "lỗi không rõ"
+        return {"success": False, "errors": [{"message": reason}]}
 
     def _get(self, url, **kw):
         return self._request("GET", url, **kw)
@@ -984,7 +1039,7 @@ def audit_page_rules(log) -> list[dict]:
     one zone, or a match pattern shaped differently than what sync_redirects
     ever writes (see _REDIRECT_PATTERN_RE) - not "zero rules", since most
     zones never had a redirect at all and that would just be noise."""
-    cf = CFClient()
+    cf = CFClient(priority="low")  # always a full-fleet scan - see _RATE_LIMIT_INTERVAL
     log("Lấy toàn bộ zone trong account (master token)...")
     zones = cf.list_all_zones(per_page=1000)
     log(f"Tìm thấy {len(zones)} zone(s). Đang quét Page Rules theo batch...")
@@ -1040,7 +1095,7 @@ def list_redirects(zone_pairs: list[dict], log) -> list[dict]:
     zone_id} - one row per rule, not filtered to anomalies. Built for
     exporting "what redirects to what" as a report, complementing
     audit_page_rules (which answers "what's broken", not "what exists")."""
-    cf = CFClient()
+    cf = CFClient(priority="low")  # every hosted domain at once - see _RATE_LIMIT_INTERVAL
     log(f"Đang quét Page Rules cho {len(zone_pairs)} domain...")
 
     def _one(pair):

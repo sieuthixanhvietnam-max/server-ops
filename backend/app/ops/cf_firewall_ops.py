@@ -19,7 +19,11 @@ def update_firewall(
     and passes this explicitly - see cf_ops.add_domains' docstring for why
     the hardcoded-fallback-dict pattern this used to have was removed."""
     assert preset is not None, "caller must resolve a preset (get_default_preset_params/preset_to_params)"
-    cf = CFClient()
+    # "low" only for the all_zones branch (every zone in the fleet) - a
+    # specific domain list is always a small, deliberate, interactive
+    # action and must not queue behind a full-fleet run sharing the same
+    # token - see cf_ops._RATE_LIMIT_INTERVAL.
+    cf = CFClient(priority="high" if domains is not None else "low")
 
     def _one(domain):
         zone_id = cf.get_zone_id(domain)
