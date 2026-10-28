@@ -12,12 +12,14 @@ import { JOB_STATUS_COLORS, JOB_STATUS_LABELS } from '@/utils/jobConstants';
 import { RESULT_STATUS_COLORS } from '@/utils/resultStatus';
 import { MinusCircleOutlined, PlusOutlined, WarningFilled } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, App, Button, Card, Checkbox, Segmented, Select, Space, Spin, Table, Tag } from 'antd';
+import { Alert, App, Button, Card, Checkbox, Input, Segmented, Select, Space, Spin, Table, Tag } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
+
+const { TextArea } = Input;
 
 type Row = { domain: string; sourceServer?: string; destServer?: string };
 type ServerOption = { server_name: string; server_ip: string };
-type MigrateMode = 'single' | 'list' | 'whole';
+type MigrateMode = 'single' | 'paste' | 'list' | 'whole';
 
 const STATUS_LABELS: Record<string, string> = {
   OK: 'Thành công',
@@ -27,6 +29,16 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const emptyRow = (): Row => ({ domain: '' });
+
+const parseDomains = (text: string) =>
+  Array.from(
+    new Set(
+      text
+        .split(/\r?\n/)
+        .map((d) => d.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
 
 // Flattens VerifyInfo into the same short text VerifyBadge shows, for
 // export/copy - the tag styling doesn't survive a CSV cell anyway.
@@ -202,6 +214,20 @@ const MigrateWpsite: React.FC = () => {
   // rõ server nguồn - cùng lý do như clone-wpsite.
   const [sourceServersMap, setSourceServersMap] = useState<Record<string, ServerOption[]>>({});
 
+  // Mode "paste" - dán tự do nhiều domain (không cần đã biết thuộc server
+  // nào, không cần cùng 1 server nguồn như mode "list"/"whole") rồi chọn 1
+  // server đích chung cho tất cả - tránh phải gõ/chọn tay từng dòng khi cần
+  // chuyển hàng chục/trăm domain cùng lúc sang 1 server mới.
+  const [pasteText, setPasteText] = usePersistedState('migrate-wpsite:pasteText', '');
+  const [pasteDestServer, setPasteDestServer] = usePersistedState<string | undefined>(
+    'migrate-wpsite:pasteDestServer',
+    undefined,
+  );
+  const [pasteSourceChoices, setPasteSourceChoices] = usePersistedState<Record<string, string>>(
+    'migrate-wpsite:pasteSourceChoices',
+    {},
+  );
+
   // Mode "list"/"whole" - 1 server nguồn + 1 server đích áp dụng cho nhiều
   // domain cùng lúc, khỏi phải gõ/chọn từng dòng như mode "single".
   const [bulkSourceServer, setBulkSourceServer] = usePersistedState<string | undefined>(
@@ -237,10 +263,11 @@ const MigrateWpsite: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (mode !== 'single') return;
-    const domains = Array.from(
-      new Set(rows.map((r) => r.domain.trim().toLowerCase()).filter(Boolean)),
-    ).filter((d) => !(d in sourceServersMap));
+    if (mode !== 'single' && mode !== 'paste') return;
+    const raw = mode === 'single' ? rows.map((r) => r.domain) : parseDomains(pasteText);
+    const domains = Array.from(new Set(raw.map((d) => d.trim().toLowerCase()).filter(Boolean))).filter(
+      (d) => !(d in sourceServersMap),
+    );
     if (!domains.length) return;
     Promise.all(
       domains.map(async (domain) => {
@@ -254,13 +281,13 @@ const MigrateWpsite: React.FC = () => {
       setSourceServersMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, rows]);
+  }, [mode, rows, pasteText]);
 
   // Danh sách domain thật của server nguồn đã chọn ở mode "list"/"whole" -
   // dùng listDomains({server_name}) vì đây là chọn cả server, không phải
   // tìm 1 domain cụ thể như DomainSelect.
   useEffect(() => {
-    if (mode === 'single' || !bulkSourceServer) {
+    if ((mode !== 'list' && mode !== 'whole') || !bulkSourceServer) {
       setBulkDomains([]);
       setBulkDomainsTotal(0);
       setBulkError(undefined);
@@ -306,7 +333,16 @@ const MigrateWpsite: React.FC = () => {
         }))
       : [];
 
-  const entries = mode === 'single' ? singleEntries : bulkEntries;
+  const pasteDomains = parseDomains(pasteText);
+  const pasteAmbiguousDomains = pasteDomains.filter((d) => isSourceAmbiguous(d));
+  const pasteUnresolvedAmbiguousDomains = pasteAmbiguousDomains.filter((d) => !pasteSourceChoices[d]);
+  const pasteEntries = pasteDestServer
+    ? pasteDomains
+        .filter((d) => !isSourceAmbiguous(d) || pasteSourceChoices[d])
+        .map((domain) => ({ domain, sourceServer: pasteSourceChoices[domain], destServer: pasteDestServer }))
+    : [];
+
+  const entries = mode === 'single' ? singleEntries : mode === 'paste' ? pasteEntries : bulkEntries;
 
   const needsSourceServerCount = rows.filter(
     (r) => r.domain.trim() && isSourceAmbiguous(r.domain.trim().toLowerCase()) && !r.sourceServer,
@@ -323,9 +359,22 @@ const MigrateWpsite: React.FC = () => {
     setBulkSelectedDomains([]);
     setBulkDomains([]);
     setBulkRemoveResults({});
-    ['mode', 'rows', 'jobId', 'bulkSourceServer', 'bulkDestServer', 'bulkSelectedDomains'].forEach((k) =>
-      clearPersistedState(`migrate-wpsite:${k}`),
-    );
+    setPasteText('');
+    setPasteDestServer(undefined);
+    setPasteSourceChoices({});
+    [
+      'mode',
+      'rows',
+      'jobId',
+      'bulkSourceServer',
+      'bulkDestServer',
+      'bulkSelectedDomains',
+      'pasteText',
+      'pasteDestServer',
+      'pasteSourceChoices',
+    ].forEach((k) => {
+      clearPersistedState(`migrate-wpsite:${k}`);
+    });
   };
 
   const run = async (dryRun: boolean) => {
@@ -348,6 +397,13 @@ const MigrateWpsite: React.FC = () => {
         if (mode === 'single') {
           setRows([emptyRow()]);
           clearPersistedState('migrate-wpsite:rows');
+        } else if (mode === 'paste') {
+          setPasteText('');
+          setPasteDestServer(undefined);
+          setPasteSourceChoices({});
+          ['pasteText', 'pasteDestServer', 'pasteSourceChoices'].forEach((k) => {
+            clearPersistedState(`migrate-wpsite:${k}`);
+          });
         } else {
           setBulkSourceServer(undefined);
           setBulkDestServer(undefined);
@@ -382,12 +438,13 @@ const MigrateWpsite: React.FC = () => {
           style={{ marginBottom: 12 }}
           options={[
             { label: 'Domain đơn', value: 'single' },
+            { label: 'Dán danh sách', value: 'paste' },
             { label: 'Danh sách domain trên 1 server', value: 'list' },
             { label: 'Toàn bộ 1 server', value: 'whole' },
           ]}
         />
 
-        {mode !== 'single' && (
+        {(mode === 'list' || mode === 'whole') && (
           <div style={{ marginBottom: 12 }}>
             <Space style={{ marginBottom: 8 }} wrap>
               <Select
@@ -476,6 +533,73 @@ const MigrateWpsite: React.FC = () => {
                   </div>
                 )}
               </>
+            )}
+          </div>
+        )}
+
+        {mode === 'paste' && (
+          <div style={{ marginBottom: 12 }}>
+            <TextArea
+              rows={8}
+              placeholder="Dán danh sách domain cần chuyển, mỗi dòng 1 domain..."
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              style={{ marginBottom: 8 }}
+            />
+            <Select
+              size="small"
+              style={{ width: 320 }}
+              showSearch
+              allowClear
+              optionFilterProp="label"
+              placeholder="Chọn server đích cho toàn bộ danh sách..."
+              value={pasteDestServer}
+              onChange={(v) => setPasteDestServer(v)}
+              options={serverOptions.map((s) => ({
+                value: s.server_name,
+                label: `${s.server_name} (${s.provider} · ${s.ip}) — ${s.domains_count} domain`,
+              }))}
+            />
+
+            {pasteAmbiguousDomains.length > 0 && (
+              <Card
+                size="small"
+                style={{ marginTop: 12 }}
+                title={`⚠ ${pasteAmbiguousDomains.length} domain tồn tại trên nhiều server - chọn server nguồn`}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {pasteAmbiguousDomains.map((domain) => {
+                    const servers = sourceServersMap[domain] || [];
+                    return (
+                      <div key={domain} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ minWidth: 200 }}>{domain}</span>
+                        <Select
+                          style={{ flex: 1 }}
+                          size="small"
+                          showSearch
+                          allowClear
+                          optionFilterProp="label"
+                          status={pasteSourceChoices[domain] ? undefined : 'error'}
+                          placeholder={`Chọn 1 trong ${servers.length} server nguồn - bỏ qua sẽ loại domain này khỏi lần chạy`}
+                          value={pasteSourceChoices[domain]}
+                          onChange={(v) =>
+                            setPasteSourceChoices((prev) => {
+                              const next = { ...prev };
+                              if (v) next[domain] = v;
+                              else delete next[domain];
+                              return next;
+                            })
+                          }
+                          options={servers.map((s) => ({
+                            value: s.server_name,
+                            label: `${s.server_name} (${s.server_ip})`,
+                          }))}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
             )}
           </div>
         )}
@@ -587,6 +711,16 @@ const MigrateWpsite: React.FC = () => {
             {mode === 'single' && missingDestCount > 0 && (
               <Tag icon={<WarningFilled />} color="error">
                 {missingDestCount} thiếu server đích
+              </Tag>
+            )}
+            {mode === 'paste' && !pasteDestServer && pasteDomains.length > 0 && (
+              <Tag icon={<WarningFilled />} color="error">
+                Chưa chọn server đích
+              </Tag>
+            )}
+            {mode === 'paste' && pasteUnresolvedAmbiguousDomains.length > 0 && (
+              <Tag icon={<WarningFilled />} color="error">
+                {pasteUnresolvedAmbiguousDomains.length} domain mơ hồ chưa chọn server nguồn (sẽ bị loại khỏi lần chạy)
               </Tag>
             )}
           </Space>
